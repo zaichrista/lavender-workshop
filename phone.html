@@ -1,0 +1,604 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Lavender Workshop · A Day</title>
+<style>
+  :root { --ink:#f3ecfa; }
+  html,body { margin:0; height:100%; background:#14101c; color:var(--ink); font-family:Georgia,"Times New Roman",serif; overflow:hidden; }
+  #stage { position:relative; height:100%; display:flex; justify-content:center; align-items:center; }
+  canvas#main { height:100%; max-width:100%; aspect-ratio:540/1170; object-fit:contain; display:block; }
+  #hud { position:absolute; top:max(14px,env(safe-area-inset-top)); left:0; right:0; text-align:center; pointer-events:none; text-shadow:0 1px 6px rgba(0,0,0,.6); }
+  #clock { font-size:26px; letter-spacing:.08em; }
+  #phase { font-size:12px; letter-spacing:.3em; text-transform:uppercase; opacity:.8; margin-top:2px; }
+  #ctl { position:absolute; left:50%; transform:translateX(-50%); bottom:max(18px,env(safe-area-inset-bottom)); width:min(92%,420px);
+         display:flex; gap:12px; align-items:center; padding:10px 14px; border-radius:999px; background:rgba(24,16,36,.55); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); }
+  #play { background:none; border:0; color:var(--ink); font-size:18px; width:28px; cursor:pointer; padding:0; }
+  #slider { flex:1; accent-color:#b9a0e6; }
+  #loading { position:absolute; bottom:90px; left:0; right:0; text-align:center; font-size:12px; letter-spacing:.25em; text-transform:uppercase; opacity:.75; pointer-events:none; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="main"></canvas>
+  <div id="hud"><div id="clock">07:00</div><div id="phase">Morning</div></div>
+  <div id="loading">painting the workshop…</div>
+  <div id="ctl"><button id="play" aria-label="play / pause">❚❚</button><input id="slider" type="range" min="0" max="24" step="0.01" value="7" aria-label="time of day"></div>
+</div>
+
+<script>
+/* =====================================================================
+   A LAVENDER WORKSHOP, PAINTED WITH NUMBERS
+   ---------------------------------------------------------------------
+   • The room is a 3D box. P(x,y,z) turns a point in the room (metres) into
+     a pixel on the screen — that single function is the whole perspective.
+   • Every surface is filled with thousands of tiny curved brush strokes
+     (Van Gogh) in colours that jitter slightly (Monet).
+   • The room is painted ONCE. Then every frame the "light" changes:
+     sky colour, tint of the room, sunbeams, fire glow, lamp glow.
+   ===================================================================== */
+
+const W = 540, H = 1170, SC = 1.25;              // logical size, and pixel-density multiplier
+const F = 340, CX = 270, CY = 540, EYE = 1.7;    // focal length, vanishing point, eye height (m)
+const P = (x, y, z) => [CX + F * x / z, CY - F * (y - EYE) / z];   // 3D room → 2D screen
+
+/* ---------- random + colour helpers ---------- */
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+let rnd = mulberry32(11);
+const R = (a,b)=>a+(b-a)*rnd();
+const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+const lerp = (a,b,t)=>a+(b-a)*t;
+const cj = (h,s,l,a=1,j=1)=>`hsla(${(h+R(-6,6)*j)|0},${clamp(s+R(-8,8)*j,0,100)|0}%,${clamp(l+R(-7,7)*j,0,100)|0}%,${a})`;
+const toVP = (x,y)=>Math.atan2(CY-y, CX-x);       // stroke direction pointing at the vanishing point
+
+/* ---------- layers (offscreen canvases) ---------- */
+function makeLayer(){ const c=document.createElement('canvas'); c.width=W*SC; c.height=H*SC; const x=c.getContext('2d'); x.scale(SC,SC); x.lineCap='round'; return {c,x}; }
+const OUT=makeLayer(), ROOM=makeLayer(), SKYTEX=makeLayer(), MASK=makeLayer(), TMP=makeLayer(), LIGHT=makeLayer(), GRAIN=makeLayer();
+const main = document.getElementById('main'); main.width=W*SC; main.height=H*SC;
+const M = main.getContext('2d'); M.scale(SC,SC); M.lineCap='round';
+let G = ROOM.x;                                   // the layer we are currently painting on
+const use = L => { G = L.x; };
+
+/* ---------- THE BRUSH: one fine, slightly curved stroke ---------- */
+function stk(x,y,len,w,ang,col,cv=0){
+  const dx=Math.cos(ang)*len*.5, dy=Math.sin(ang)*len*.5;
+  G.strokeStyle=col; G.lineWidth=w; G.beginPath(); G.moveTo(x-dx,y-dy);
+  if (cv) G.quadraticCurveTo(x-dy*cv,y+dx*cv,x+dx,y+dy); else G.lineTo(x+dx,y+dy);
+  G.stroke();
+}
+function inPoly(x,y,p){ let c=false; for(let i=0,j=p.length-1;i<p.length;j=i++){ const a=p[i],b=p[j]; if((a[1]>y)!==(b[1]>y) && x<(b[0]-a[0])*(y-a[1])/(b[1]-a[1])+a[0]) c=!c; } return c; }
+const pathPoly = (g,pts)=>{ g.beginPath(); pts.forEach((p,i)=>i?g.lineTo(p[0],p[1]):g.moveTo(p[0],p[1])); g.closePath(); };
+
+/* the mask remembers where bare floor is visible, so sunbeams don't land on furniture */
+function occlude(pts){ MASK.x.save(); MASK.x.globalCompositeOperation='destination-out'; MASK.x.fillStyle='#000'; pathPoly(MASK.x,pts); MASK.x.fill(); MASK.x.restore(); }
+
+/* Fill any shape with scattered strokes.
+   col(x,y)→colour, ang(x,y)→stroke direction. o: len, wid, dens (coverage), aj (angle wobble), cv (curvature) */
+function paintPoly(pts,col,ang,o={}){
+  if (o.coarse) paintPoly(pts,col,ang,{len:[14,24],wid:[4,7],dens:1.8,aj:.45,cv:.22});   // underpainting: big loose strokes first
+  const len=o.len||[6,11], wid=o.wid||[1.3,2.4], dens=o.dens??3.4, cv=o.cv??.14, aj=o.aj??.28;
+  let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+  for(const p of pts){ if(p[0]<x0)x0=p[0]; if(p[0]>x1)x1=p[0]; if(p[1]<y0)y0=p[1]; if(p[1]>y1)y1=p[1]; }
+  x0=Math.max(x0,-6); y0=Math.max(y0,-6); x1=Math.min(x1,W+6); y1=Math.min(y1,H+6);
+  if (x1<=x0||y1<=y0) return;
+  const avg=((len[0]+len[1])/2)*((wid[0]+wid[1])/2);
+  const n=Math.min((x1-x0)*(y1-y0)*dens/avg, o.max||260000)|0;
+  G.save(); pathPoly(G,pts); G.clip();
+  for(let i=0;i<n;i++){
+    const x=R(x0,x1), y=R(y0,y1);
+    if(!inPoly(x,y,pts)) continue;
+    stk(x,y,R(len[0],len[1]),R(wid[0],wid[1]),ang(x,y)+R(-aj,aj),col(x,y,i),cv*R(-1,1));
+  }
+  G.restore();
+  if (o.occ) occlude(pts);
+}
+/* dark blue-ish contour strokes along the edge of a shape, Van Gogh style */
+function edge(pts,[h,s,l]=[250,34,20],w=1.3,a=.5){
+  for(let i=0;i<pts.length;i++){
+    const A=pts[i],B=pts[(i+1)%pts.length], d=Math.hypot(B[0]-A[0],B[1]-A[1]); if(d<1) continue;
+    const n=Math.max(1,Math.round(d/5)), ang=Math.atan2(B[1]-A[1],B[0]-A[0]);
+    for(let k=0;k<n;k++){ const t=(k+.5)/n; stk(A[0]+(B[0]-A[0])*t+R(-.5,.5),A[1]+(B[1]-A[1])*t+R(-.5,.5),d/n*1.35,w*R(.7,1.3),ang+R(-.07,.07),cj(h,s,l,a,.6)); }
+  }
+}
+const ellPts=(cx,cy,rx,ry,n=14,rot=0)=>Array.from({length:n},(_,i)=>{const t=i/n*Math.PI*2,x=Math.cos(t)*rx,y=Math.sin(t)*ry;return[cx+x*Math.cos(rot)-y*Math.sin(rot),cy+x*Math.sin(rot)+y*Math.cos(rot)];});
+
+/* a painted face of an object: base colour [hue,sat,light] */
+function facePoly(pts,base,o={}){
+  const [h,s,l]=base;
+  paintPoly(pts,()=>cj(h,s,l,.96,o.j??.8),o.ang||(()=>0),{len:o.len||[5,10],wid:o.wid||[1.2,2.2],dens:o.dens??2.4,aj:o.aj??.2,occ:o.occ!==false});
+  if (o.edge!==false) edge(pts,o.edgeCol||[250,34,20],o.ew||1.3,o.ea||.5);
+}
+/* a box in the room: draws only the faces the viewer can see */
+function slab(x0,x1,y0,y1,z0,z1,base,o={}){
+  const [h,s,l]=base, along=o.vert?()=>Math.PI/2:toVP, front=o.vert?()=>Math.PI/2:()=>0;
+  if (x1<0) facePoly([P(x1,y0,z0),P(x1,y1,z0),P(x1,y1,z1),P(x1,y0,z1)],[h,s,l-8],{ang:o.vert?along:toVP,...o});
+  else if (x0>0) facePoly([P(x0,y0,z0),P(x0,y1,z0),P(x0,y1,z1),P(x0,y0,z1)],[h,s,l+2],{ang:o.vert?along:toVP,...o});
+  if (y1<EYE) facePoly([P(x0,y1,z0),P(x1,y1,z0),P(x1,y1,z1),P(x0,y1,z1)],[h,s,l+7],{ang:o.topAng||toVP,...o});
+  else if (y0>EYE) facePoly([P(x0,y0,z0),P(x1,y0,z0),P(x1,y0,z1),P(x0,y0,z1)],[h,s,l-4],{ang:toVP,...o});
+  facePoly([P(x0,y0,z0),P(x1,y0,z0),P(x1,y1,z0),P(x0,y1,z0)],[h,s,l],{ang:front,...o});
+}
+
+/* ---------- LAVENDER: a stem, and a head made of tiny purple flecks ---------- */
+const bez=(p0,c,p2,t)=>{const u=1-t;return{x:u*u*p0[0]+2*u*t*c[0]+t*t*p2[0],y:u*u*p0[1]+2*u*t*c[1]+t*t*p2[1],a:Math.atan2(2*u*(c[1]-p0[1])+2*t*(p2[1]-c[1]),2*u*(c[0]-p0[0])+2*t*(p2[0]-c[0]))};};
+function lav(bx,by,tx,ty,hw,o={}){
+  const L=Math.hypot(tx-bx,ty-by); if(L<3) return;
+  const ang=Math.atan2(ty-by,tx-bx), bend=(o.bend??R(-.14,.14))*L;
+  const c=[(bx+tx)/2-Math.sin(ang)*bend,(by+ty)/2+Math.cos(ang)*bend], p0=[bx,by], p2=[tx,ty];
+  const headF=o.head??.4, hue=o.hue??270, n=Math.max(5,Math.ceil(L/2));
+  const e=bez(p0,c,p2,1-headF*.85);
+  G.strokeStyle=cj(95,22,o.dry?52:44,.95,.6); G.lineWidth=Math.max(.7,hw*.2);
+  G.beginPath(); G.moveTo(bx,by); G.quadraticCurveTo(lerp(bx,c[0],1-headF*.85),lerp(by,c[1],1-headF*.85),e.x,e.y); G.stroke();
+  const per=Math.max(2,Math.round(hw*.55));
+  for(let i=0;i<=n;i++){
+    const t=i/n; if(t<1-headF) continue;
+    const k=(t-(1-headF))/headF, prof=.2+.8*Math.sin(Math.PI*Math.pow(k,.75)), p=bez(p0,c,p2,t), nx=-Math.sin(p.a), ny=Math.cos(p.a);
+    for(let j=0;j<per;j++){
+      const off=R(-1,1)*hw*prof*.5;
+      stk(p.x+nx*off,p.y+ny*off,hw*R(.5,.95),Math.max(.9,hw*R(.2,.38)),p.a+R(-.9,.9),
+          cj(hue+R(-12,14),R(38,64),R(40,70)+(Math.abs(off)<hw*.12?6:0),.9,.5),.3);
+    }
+    if(rnd()<.25) stk(p.x+nx*R(-hw,hw)*.4,p.y+ny*R(-hw,hw)*.4,hw*.5,hw*.25,R(0,6.3),cj(hue+14,45,82,.8),0);
+  }
+}
+/* a loose bunch tied at (bx,by); dir=+1 hangs downward, dir=-1 stands upward */
+function bunch(bx,by,spread,len,count,hw,dir=1,o={}){
+  for(let i=0;i<count;i++){
+    const u=count>1?i/(count-1)-.5:0;
+    lav(bx+R(-2,2)+u*spread*.12,by, bx+u*spread+R(-spread*.12,spread*.12),by+dir*len*R(.82,1.06),hw*R(.85,1.15),{head:.45,...o});
+  }
+}
+/* a satin ribbon tie around a bunch */
+function tie(x,y,w,h,col=[345,36,76]){ facePoly([[x-w/2,y],[x+w/2,y],[x+w/2,y+h],[x-w/2,y+h]],col,{occ:false,edge:false,dens:3,len:[3,6],wid:[1,1.8]}); }
+
+/* =====================================================================
+   THE DAY: keyframes of light  [hour, skyTop, skyMid, skyHorizon, roomTint, outsideTint, stars, lamp]
+   ===================================================================== */
+const KEYS=[
+ [0 ,[10,14,48],[24,34,94],[52,70,128],[12,16,52,.62],[8,12,46,.55],1,1],
+ [4.5,[18,22,64],[40,54,112],[84,92,140],[20,24,60,.55],[14,18,56,.45],.8,1],
+ [6 ,[70,86,150],[200,150,170],[255,184,120],[70,50,100,.30],[255,170,140,.14],.15,.75],
+ [7.5,[110,160,220],[190,205,235],[255,214,160],[255,200,160,.08],[255,210,170,.06],0,.2],
+ [10,[70,140,225],[140,188,240],[214,226,246],[255,244,225,.0],[255,255,255,0],0,0],
+ [13,[60,130,220],[130,184,240],[220,232,248],[255,244,225,.0],[255,255,255,0],0,0],
+ [16.5,[86,130,206],[180,190,225],[250,214,170],[255,200,140,.10],[255,210,150,.08],0,.1],
+ [18,[80,76,150],[226,120,120],[255,170,70],[255,150,100,.20],[255,150,100,.18],0,.4],
+ [19,[44,42,110],[150,86,130],[250,130,90],[120,70,110,.34],[160,80,100,.30],.2,.8],
+ [20.5,[20,24,76],[48,52,120],[110,86,140],[30,30,80,.5],[24,26,80,.45],.7,1],
+ [22,[12,16,52],[28,38,100],[58,74,134],[14,18,54,.6],[10,14,50,.52],1,1],
+ [24,[10,14,48],[24,34,94],[52,70,128],[12,16,52,.62],[8,12,46,.55],1,1],
+];
+const lerpv=(a,b,f)=>Array.isArray(a)?a.map((v,i)=>lerpv(v,b[i],f)):a+(b-a)*f;
+function sampleDay(t){ let i=0; while(i<KEYS.length-2&&t>=KEYS[i+1][0]) i++; const a=KEYS[i],b=KEYS[i+1]; let f=(t-a[0])/(b[0]-a[0]); f=f*f*(3-2*f); const r=lerpv(a.slice(1),b.slice(1),f); return {top:r[0],mid:r[1],hor:r[2],room:r[3],out:r[4],stars:r[5],lamp:r[6]}; }
+const rgba=(c,a=1)=>`rgba(${c[0]|0},${c[1]|0},${c[2]|0},${a})`;
+
+/* =====================================================================
+   WHERE THINGS ARE
+   ===================================================================== */
+const WIN3=[[-1.9,1.2,2.75],[-1.9,2.4,2.75],[-1.9,2.4,3.85],[-1.9,1.2,3.85]];
+const winPoly=WIN3.map(p=>P(...p));
+const doorPoly=[P(.45,0,4.2),P(.45,2.3,4.2),P(1.65,2.3,4.2),P(1.65,0,4.2)];
+const fireOpen=[P(-.7,.08,3.85),P(-.2,.08,3.85),P(-.2,.7,3.85),P(-.7,.7,3.85)];
+const LAMP=P(.5,1.12,2.3);
+
+/* ---------- 1. OUTSIDE: lavender rows running to the horizon, cypress, hills ---------- */
+function cypress(x,by,h,w){
+  for(let i=0;i<Math.round(h*w*.55);i++){
+    const t=R(0,1), half=w*.5*Math.sin(Math.PI*Math.pow(t,.65))*.95+.5, y=by-t*h, xx=x+R(-1,1)*half+Math.sin(t*5)*w*.08;
+    stk(xx,y,R(5,9),R(1.4,2.4),-Math.PI/2+Math.sin(t*6+xx*.2)*.5+R(-.3,.3),cj(R(140,170),R(28,44),R(14,32)+t*6,.95),.35);
+  }
+}
+function paintOutdoor(){
+  use(OUT);
+  for(const [x0,y0,x1,y1] of [[20,440,150,660],[290,470,420,700]]){
+    const hillTop=x=>CY-18-10*Math.sin(x*.045+1)-6*Math.sin(x*.11);
+    const hills=[]; for(let x=x0;x<=x1;x+=4) hills.push([x,hillTop(x)]); hills.push([x1,CY+3],[x0,CY+3]);
+    paintPoly(hills,(x,y)=>cj(R(240,268),26,lerp(62,48,(y-hillTop(x))/30),.95),(x)=>Math.sin(x*.06)*.3,{dens:2.6,len:[5,9],wid:[1.2,2]});
+    const ground=[[x0,CY],[x1,CY],[x1,y1],[x0,y1]];
+    paintPoly(ground,(x,y)=>{
+      const d=y-CY, u=(x-CX)/(d+3), row=Math.floor(u*1.7+200), haze=clamp(1-d/90,0,1);
+      return row%2 ? cj(R(262,288),clamp(56-haze*24,0,100),clamp(44+haze*20,0,100),.95) : cj(R(72,100),clamp(34-haze*14,0,100),clamp(54+haze*14,0,100),.9);
+    },toVP,{dens:2.8,len:[5,10],wid:[1.2,2.2],aj:.15,cv:.1});
+    paintPoly(ground,()=>cj(R(268,290),58,R(55,72),.7),toVP,{dens:.35,len:[4,7],wid:[1.2,2],aj:.1});   // bright purple flecks
+  }
+  cypress(372,CY+14,92,26); cypress(398,CY+6,60,18);   // seen through the door
+  cypress(78,CY+14,70,20);                              // seen through the window
+}
+function paintSkyTexture(){
+  use(SKYTEX);
+  const swirl=(x,y)=>Math.sin(x*.03+y*.02)*1.4+Math.cos(y*.045-x*.018)*1.1+Math.atan2(y-500,x-70)*.4;
+  for(const [x0,y0,x1,y1] of [[20,440,150,545],[290,470,420,545]]){
+    for(let i=0;i<2600;i++){ const x=R(x0,x1), y=R(y0,y1);
+      stk(x,y,R(7,16),R(1.4,2.6),swirl(x,y),rnd()<.5?'rgba(255,255,255,.11)':'rgba(10,14,50,.10)',.45); }
+  }
+}
+
+/* ---------- 2. THE SHELL: ceiling, walls, floor ---------- */
+const plaster=(x,y,v=0)=>cj(36,30,clamp(84-v,0,100),.95);
+function wallCol(side){
+  return (x,y)=>{
+    const z=Math.abs(F*1.9/(x-CX)), y3=EYE-(y-CY)*z/F, v=Math.pow((x-CX)/270,2)*6;
+    if (y3<.92){ const seam=((z*3.3)%1)<.05; return cj(264,seam?18:15,(seam?52:62)-v,.95); }   // lavender wainscot panels
+    if (y3<1.0)  return cj(28,38,40-v,.95);                                                     // wooden rail
+    return plaster(x,y,v);
+  };
+}
+function paintShell(){
+  use(ROOM);
+  G.save(); G.beginPath(); G.rect(-10,-10,W+20,H+20);
+  for(const poly of [winPoly,doorPoly]){ poly.forEach((p,i)=>i?G.lineTo(p[0],p[1]):G.moveTo(p[0],p[1])); G.closePath(); }
+  G.clip('evenodd');
+  // ceiling
+  paintPoly([P(-1.9,2.8,.55),P(1.9,2.8,.55),P(1.9,2.8,4.2),P(-1.9,2.8,4.2)],(x,y)=>{ const z=F*1.1/Math.max(1,CY-y); return cj(36,22,70+Math.min(10,z*1.6),1); },toVP,{coarse:true,aj:.5,len:[5,9]});
+  // back wall
+  paintPoly([P(-1.9,0,4.2),P(1.9,0,4.2),P(1.9,2.8,4.2),P(-1.9,2.8,4.2)],(x,y)=>{
+    const y3=EYE-(y-CY)*4.2/F; if(y3<.92) return cj(264,16,58,.95); if(y3<1.0) return cj(28,38,38,.95); return plaster(x,y,2); },
+    (x,y)=>Math.sin(x*.05)*.5+Math.cos(y*.04)*.5,{coarse:true});
+  // side walls
+  paintPoly([P(-1.9,0,.55),P(-1.9,0,4.2),P(-1.9,2.8,4.2),P(-1.9,2.8,.55)],wallCol(-1),toVP,{coarse:true,aj:.4});
+  paintPoly([P(1.9,0,.55),P(1.9,0,4.2),P(1.9,2.8,4.2),P(1.9,2.8,.55)],wallCol(1),toVP,{coarse:true,aj:.4});
+  // floor: planks, a lavender rug, the stone hearth
+  const floor=[P(-1.9,0,.55),P(1.9,0,.55),P(1.9,0,4.2),P(-1.9,0,4.2)];
+  paintPoly(floor,(x,y)=>{
+    const z=F*EYE/Math.max(1,y-CY), x3=(x-CX)*z/F;
+    if (z>3.3&&z<3.86&&x3>-1&&x3<.1) return cj(220,8,58,.95);
+    if (Math.abs(x3)<1.15&&z>1.05&&z<3.2){ if(Math.abs(x3)>1.0||z<1.2||z>3.05) return cj(268,36,40,.95); const s=Math.floor(x3/.11); return s%3===0?cj(275,40,66,.95):s%3===1?cj(40,30,86,.95):cj(262,26,74,.95); }
+    const pl=Math.floor((x3+3)/.16); return cj(30+(pl*37%7)-3,40,36+((pl*53)%9)-4,.95);
+  },toVP,{coarse:true,aj:.6,len:[5,10],cv:.3});
+  G.restore();
+  MASK.x.fillStyle='#fff'; pathPoly(MASK.x,floor); MASK.x.fill();
+}
+
+/* ---------- 3. DETAILS ON THE SHELL: beams, door frame, window ---------- */
+function paintBeamsAndFrames(){
+  use(ROOM);
+  for(const z of [3.6,2.8,2.0,1.2]) slab(-1.9,1.9,2.58,2.8,z-.09,z+.09,[26,42,26],{occ:false});
+  // door: frame, threshold, a painted wreath
+  slab(.4,.47,0,2.38,4.12,4.2,[28,40,34],{occ:false}); slab(1.63,1.7,0,2.38,4.12,4.2,[28,40,34],{occ:false});
+  slab(.4,1.7,2.3,2.38,4.12,4.2,[28,40,34],{occ:false}); slab(.4,1.7,0,.05,4.0,4.2,[220,8,60],{occ:false});
+  // window: frame, mullions, sill
+  const wf=(a,b)=>facePoly([P(-1.9,a[0],a[1]),P(-1.9,a[2],a[3]),P(-1.9,b[2],b[3]),P(-1.9,b[0],b[1])],[38,28,90],{occ:false,vert:true,ang:toVP,edge:false});
+  const bar=(y0,y1,z0,z1)=>facePoly([P(-1.89,y0,z0),P(-1.89,y1,z0),P(-1.89,y1,z1),P(-1.89,y0,z1)],[40,26,90],{occ:false,ang:toVP,ea:.4});
+  bar(1.14,1.2,2.69,3.91); bar(2.4,2.46,2.69,3.91); bar(1.14,2.46,2.69,2.75); bar(1.14,2.46,3.85,3.91);
+  bar(1.77,1.83,2.7,3.9); bar(1.14,2.46,3.27,3.33);
+  slab(-1.9,-1.66,1.12,1.2,2.62,3.98,[38,28,88],{occ:false});
+}
+
+/* ---------- 4. FIREPLACE (back wall, left of the door) ---------- */
+function paintFireplace(){
+  use(ROOM);
+  slab(-.85,-.05,0,2.8,3.85,4.2,[36,24,80],{occ:false});                      // chimney breast
+  // dark firebox
+  facePoly(fireOpen,[14,40,9],{occ:false,j:.5,ang:()=>Math.PI/2});
+  // logs
+  for(let i=0;i<3;i++){ const a=P(-.62+i*.14,.1,3.85), b=P(-.3+i*.05,.2+i*.02,3.85); facePoly([[a[0],a[1]],[b[0],b[1]-4],[b[0],b[1]+3],[a[0],a[1]+6]],[22,40,18],{occ:false,dens:3,ang:()=>0,edge:false}); }
+  slab(-.95,.05,1.1,1.18,3.75,4.2,[26,36,34],{occ:false});                    // mantel
+  slab(-1.0,.1,0,.05,3.3,3.85,[220,8,56],{occ:false});                       // hearth stone
+  // arch of bricks around the opening
+  slab(-.76,-.7,0,.78,3.82,3.88,[8,30,44],{occ:false,vert:true}); slab(-.2,-.14,0,.78,3.82,3.88,[8,30,44],{occ:false,vert:true}); slab(-.76,-.14,.7,.78,3.82,3.88,[8,30,44],{occ:false});
+  // framed little swirl painting above the mantel
+  const fr=[P(-.7,1.5,3.84),P(-.2,1.5,3.84),P(-.2,2.05,3.84),P(-.7,2.05,3.84)];
+  facePoly(fr,[28,40,34],{occ:false});
+  const inner=[P(-.67,1.53,3.83),P(-.23,1.53,3.83),P(-.23,2.02,3.83),P(-.67,2.02,3.83)];
+  const cxp=(inner[0][0]+inner[1][0])/2, cyp=(inner[0][1]+inner[3][1])/2;
+  paintPoly(inner,(x,y)=>{const d=Math.hypot(x-cxp,y-cyp); return d<9?cj(50,80,70,.95):cj(R(215,235),55,lerp(28,52,Math.sin(d*.45)*.5+.5),.95);},(x,y)=>Math.atan2(y-cyp,x-cxp)+Math.PI/2+Math.sin(Math.hypot(x-cxp,y-cyp)*.3),{occ:false,dens:3,len:[3,6],wid:[1,1.6],aj:.1});
+  // on the mantel: little lavender jar + two candles
+  const m=P(-.3,1.18,4.0), s=F/4.0;
+  facePoly([[m[0]-5,m[1]],[m[0]+5,m[1]],[m[0]+5,m[1]-9],[m[0]-5,m[1]-9]],[195,25,80],{occ:false,edge:false});
+  bunch(m[0],m[1]-8,10,18,6,4.5,-1);
+  for(const dx of [-30,-20]){ const c=P(-.55+(dx+30)*.012,1.18,4.0); facePoly([[c[0]-2,c[1]],[c[0]+2,c[1]],[c[0]+2,c[1]-11],[c[0]-2,c[1]-11]],[44,30,92],{occ:false,edge:false,dens:3}); }
+}
+
+/* ---------- 5. BED under the window (left wall) ---------- */
+function paintBed(){
+  use(ROOM);
+  slab(-1.9,-1.05,.12,.5,2.3,4.15,[26,40,28]);                  // frame
+  slab(-1.9,-1.03,.12,1.05,4.1,4.18,[26,42,26],{vert:true});    // headboard
+  slab(-1.88,-1.07,.5,.62,2.33,4.12,[40,22,90]);                // mattress, linen
+  // patchwork quilt (lavender squares) over the mattress top, and its drop over the side & foot
+  const cols=[[270,36,58],[282,30,70],[255,30,50],[40,28,86],[300,26,70],[268,40,44],[240,24,66]];
+  const nz=6, nx=4, z0=2.26, z1=3.62, x0=-1.92, x1=-1.0;
+  for(let i=0;i<nz;i++)for(let j=0;j<nx;j++){
+    const za=lerp(z0,z1,i/nz), zb=lerp(z0,z1,(i+1)/nz), xa=lerp(x0,x1,j/nx), xb=lerp(x0,x1,(j+1)/nx), c=cols[(i*3+j*5+((i*j)%2))%cols.length];
+    facePoly([P(xa,.66,za),P(xb,.66,za),P(xb,.66,zb),P(xa,.66,zb)],c,{ang:toVP,edgeCol:[250,30,30],ea:.35,dens:2.6});
+    if (j===nx-1) facePoly([P(xb,.66,za),P(xb,.3,za),P(xb,.3,zb),P(xb,.66,zb)],[c[0],c[1],c[2]-10],{ang:()=>Math.PI/2,edgeCol:[250,30,30],ea:.35});
+    if (i===0)    facePoly([P(xa,.66,za),P(xb,.66,za),P(xb,.34,za),P(xa,.34,za)],[c[0],c[1],c[2]-4],{ang:()=>0,edgeCol:[250,30,30],ea:.35});
+  }
+  // two plump pillows
+  for(const [px,pz] of [[-1.62,3.9],[-1.28,3.92]]){
+    facePoly(ellPts(...P(px,.76,pz),44*(F/pz)/F*3.4*0+F/pz*.19,F/pz*.12,14),[40,18,92],{ang:()=>0});
+  }
+  // a folded lavender-coloured blanket + a sprig of lavender on the quilt
+  const b=P(-1.45,.7,3.2); lav(b[0]-16,b[1],b[0]+16,b[1]-9,7,{head:.5});
+}
+
+/* ---------- 6. WINDOW curtains + vase on the sill ---------- */
+function paintWindowDressing(){
+  use(ROOM);
+  for(const [za,zb] of [[2.55,2.75],[3.85,4.05]]){
+    facePoly([P(-1.86,.95,za),P(-1.86,2.55,za),P(-1.86,2.55,zb),P(-1.86,.95,zb)],[268,24,76],{occ:false,vert:true,ang:()=>Math.PI/2,aj:.12,ea:.35});
+  }
+  const v=P(-1.78,1.2,3.3); const s=F/3.3;
+  facePoly([[v[0]-4,v[1]],[v[0]+4,v[1]],[v[0]+5,v[1]-14],[v[0]-5,v[1]-14]],[196,28,78],{occ:false,edge:false,dens:3});
+  bunch(v[0],v[1]-13,16,34,7,5.5,-1);
+}
+
+/* ---------- 7. BOOKSHELF (right wall) ---------- */
+function paintBookshelf(){
+  use(ROOM);
+  const zA=2.4, zB=3.5, shelves=[.04,.5,.95,1.4,1.85];
+  facePoly([P(1.9,.04,zA),P(1.9,2.1,zA),P(1.9,2.1,zB),P(1.9,.04,zB)],[24,35,16],{occ:false,vert:true,ang:toVP,edge:false});   // dark back
+  const bookCols=[[350,32,40],[215,34,38],[148,24,34],[268,30,46],[40,46,60],[8,40,40],[200,28,52],[285,28,60],[30,30,46],[170,22,42]];
+  shelves.forEach((y,si)=>{
+    if (si<shelves.length){
+      let z=zA+.03;
+      const kind=si%3;
+      while(z<zB-.06){
+        const r=rnd();
+        if (kind===1 && r<.16){ // jar of lavender
+          const p=P(1.62,y+.04,z+.05), s=F/z*.1; facePoly([[p[0]-s,p[1]],[p[0]+s,p[1]],[p[0]+s*1.1,p[1]-s*2],[p[0]-s*1.1,p[1]-s*2]],[195,28,80],{occ:false,edge:false,dens:3});
+          bunch(p[0],p[1]-s*2,s*2.4,s*5,6,s*1.6,-1); z+=.12; continue;
+        }
+        if (kind===2 && r<.14){ // little basket
+          const p=P(1.62,y+.04,z+.07), s=F/z*.1; facePoly([[p[0]-s*1.3,p[1]],[p[0]+s*1.3,p[1]],[p[0]+s*1.5,p[1]-s*1.5],[p[0]-s*1.5,p[1]-s*1.5]],[34,46,52],{occ:false,dens:3,edge:false});
+          z+=.15; continue;
+        }
+        const w=R(.025,.06), h=R(.17,.3), c=bookCols[(rnd()*bookCols.length)|0];
+        facePoly([P(1.62,y+.04,z),P(1.62,y+.04,z+w),P(1.62,y+.04+h,z+w),P(1.62,y+.04+h,z)],c,{occ:false,ang:()=>Math.PI/2,dens:2.8,len:[3,6],wid:[1,1.6],ea:.35});
+        z+=w+.002;
+      }
+    }
+  });
+  slab(1.5,1.9,0,2.15,2.4,2.46,[26,42,26],{vert:true});                                    // end panel facing us
+  shelves.concat([2.1]).forEach(y=>slab(1.5,1.9,y,y+.045,2.4,zB,[28,42,40]));
+  slab(1.5,1.56,0,2.15,zB-.05,zB,[26,42,26],{vert:true,occ:false});
+}
+
+/* ---------- 8. WORK TABLE with all the tools ---------- */
+function paintTable(){
+  use(ROOM);
+  // shadow on the floor
+  paintPoly([P(-.85,0,1.55),P(.85,0,1.55),P(.85,0,2.8),P(-.85,0,2.8)],()=>cj(262,22,16,.22),toVP,{dens:1.6,len:[8,16],wid:[2,3.4]});
+  const wood=[32,44,54], dark=[26,44,34];
+  for(const x of [-.68,.62]) slab(x,x+.06,0,.82,2.5,2.56,dark,{vert:true});     // far legs
+  slab(-.65,.65,.72,.82,1.66,2.54,[28,40,44]);                                   // apron
+  for(const x of [-.68,.62]) slab(x,x+.06,0,.82,1.62,1.68,dark,{vert:true});     // near legs
+  slab(-.7,.7,.82,.88,1.6,2.6,wood,{topAng:()=>0,dens:2.8});                     // the work top
+  // linen runner
+  facePoly([P(-.5,.885,1.62),P(.5,.885,1.62),P(.5,.885,2.58),P(-.5,.885,2.58)],[44,24,86],{occ:false,ang:()=>0,edge:false,dens:1.5,j:.4});
+  const Y=.89;
+  // --- lavender bundle being tied
+  { const a=P(-.62,Y,2.2), b=P(-.12,Y,2.08);
+    for(let i=0;i<8;i++) lav(b[0],b[1]+R(-3,3)+(i-4)*.9,a[0]+R(-6,4),a[1]+R(-6,6)+(i-4)*1.3,8,{head:.34,bend:R(-.05,.05)});
+    const k=P(-.3,Y,2.14); tie(k[0],k[1]-9,5,11); }
+  // --- twine spool
+  { const c=P(.02,Y+.03,2.02), r=F/2.02*.045;
+    facePoly(ellPts(c[0],c[1]+r*.5,r,r*.4,12),[40,36,66],{ang:()=>0,occ:false,dens:3,edge:false});
+    facePoly([[c[0]-r,c[1]+r*.5],[c[0]+r,c[1]+r*.5],[c[0]+r,c[1]-r*.4],[c[0]-r,c[1]-r*.4]],[44,34,76],{ang:()=>0,occ:false,dens:3,len:[3,5],wid:[1,1.4]});
+    facePoly(ellPts(c[0],c[1]-r*.4,r,r*.4,12),[44,36,82],{ang:()=>0,occ:false,dens:3,edge:false}); }
+  // --- scissors
+  { const c=P(-.25,Y+.005,1.82), s=F/1.82;
+    G.lineWidth=1.6; for(const sg of [-1,1]){ G.strokeStyle=cj(215,16,74,.95); G.beginPath(); G.moveTo(c[0]-sg*2,c[1]); G.lineTo(c[0]+sg*s*.12,c[1]-s*.04); G.stroke();
+      G.strokeStyle=cj(36,60,48,.95); G.beginPath(); G.ellipse(c[0]-sg*s*.04,c[1]+s*.02,s*.022,s*.016,0,0,6.3); G.stroke(); } }
+  // --- glass jar of lavender
+  { const p=P(.34,Y,2.26), s=F/2.26;
+    facePoly([[p[0]-s*.05,p[1]],[p[0]+s*.05,p[1]],[p[0]+s*.055,p[1]-s*.2],[p[0]-s*.055,p[1]-s*.2]],[195,28,84],{occ:false,edge:false,dens:3,j:.5});
+    for(let i=0;i<10;i++) lav(p[0]+R(-3,3),p[1]-2,p[0]+(i-5)*5+R(-3,3),p[1]-s*.5-R(0,12),8,{head:.4});
+    facePoly([[p[0]-s*.05,p[1]-s*.06],[p[0]+s*.055,p[1]-s*.06],[p[0]+s*.055,p[1]],[p[0]-s*.05,p[1]]],[200,34,78],{occ:false,edge:false,dens:2,j:.5}); }
+  // --- wooden bowl of dried buds
+  { const p=P(.4,Y,1.88), s=F/1.88;
+    facePoly([[p[0]-s*.08,p[1]-s*.045],[p[0]+s*.08,p[1]-s*.045],[p[0]+s*.055,p[1]],[p[0]-s*.055,p[1]]],[30,46,46],{occ:false,dens:3,edge:false,ang:()=>0});
+    for(let i=0;i<26;i++) stk(p[0]+R(-s*.075,s*.075),p[1]-s*.05+R(-3,1),R(3,5),R(1.6,2.6),R(0,6.3),cj(R(262,286),R(40,60),R(48,68),.95)); }
+  // --- paper tags and a small mallet
+  for(let i=0;i<3;i++){ const p=P(-.02+i*.07,Y,2.4-i*.03); facePoly([[p[0]-4,p[1]],[p[0]+4,p[1]],[p[0]+5,p[1]-5],[p[0]-3,p[1]-5]],[40,26,88],{occ:false,edge:false,dens:3}); }
+  { const p=P(-.58,Y,1.82), s=F/1.82; facePoly([[p[0]-s*.015,p[1]],[p[0]+s*.2,p[1]-s*.01],[p[0]+s*.2,p[1]-s*.025],[p[0]-s*.015,p[1]-s*.015]],[30,40,38],{occ:false,edge:false,dens:3,ang:()=>0});
+    facePoly([[p[0]-s*.05,p[1]-s*.07],[p[0]+s*.02,p[1]-s*.07],[p[0]+s*.02,p[1]],[p[0]-s*.05,p[1]]],[28,36,34],{occ:false,dens:3,ea:.4}); }
+  // --- brass oil lamp (lit at night)
+  { const p=LAMP.slice(); const s=F/2.3;
+    facePoly([[p[0]-s*.04,p[1]+s*.01],[p[0]+s*.04,p[1]+s*.01],[p[0]+s*.03,p[1]-s*.05],[p[0]-s*.03,p[1]-s*.05]],[42,60,52],{occ:false,dens:3,ea:.4});
+    facePoly([[p[0]-s*.025,p[1]-s*.05],[p[0]+s*.025,p[1]-s*.05],[p[0]+s*.03,p[1]-s*.16],[p[0]-s*.03,p[1]-s*.16]],[195,30,86],{occ:false,edge:false,dens:2,j:.4}); }
+}
+
+/* ---------- 9. THE CHAIR (Van Gogh yellow, straw seat), facing the table ---------- */
+function paintChair(){
+  use(ROOM);
+  const Y=[44,78,56], straw=[46,56,66];
+  paintPoly([P(-.35,0,1.2),P(.35,0,1.2),P(.35,0,1.95),P(-.35,0,1.95)],()=>cj(262,22,14,.2),toVP,{dens:1.4,len:[8,14],wid:[2,3]});
+  const cx=.02, hw=.22, zN=1.3, zF=1.78, sy=.46;
+  for(const x of [cx-hw,cx+hw-.04]) slab(x,x+.04,0,sy,zF-.04,zF,Y,{vert:true});            // far legs
+  slab(cx-hw,cx+hw,sy-.05,sy,zN,zF,[46,70,50]);                                              // seat rail
+  facePoly([P(cx-hw+.01,sy,zN+.01),P(cx+hw-.01,sy,zN+.01),P(cx+hw-.01,sy,zF-.01),P(cx-hw+.01,sy,zF-.01)],straw,{ang:()=>0,dens:2.8});   // the woven seat
+  for(const x of [cx-hw,cx+hw-.04]) slab(x,x+.04,0,sy,zN,zN+.04,Y,{vert:true});            // near legs
+  for(const x of [cx-hw,cx+hw-.04]) slab(x,x+.04,sy,1.02,zN,zN+.04,Y,{vert:true});         // back posts
+  for(const y of [.62,.78,.94]) slab(cx-hw+.04,cx+hw-.04,y,y+.045,zN+.005,zN+.04,Y,{});     // slats
+  // a soft lilac shawl over the chair back
+  facePoly([P(cx-hw,.98,zN-.02),P(cx+hw,.98,zN-.02),P(cx+hw-.02,.62,zN-.02),P(cx-hw+.03,.55,zN-.02)],[268,26,70],{ang:()=>Math.PI/2,aj:.3,dens:3,ea:.4});
+}
+
+/* ---------- 10. FOREGROUND + HANGING LAVENDER: the "a lot of lavender" part ---------- */
+function pot(x,z,w,h,plantH,count,hw){
+  const b=P(x,0,z), s=F/z, pw=w*s, ph=h*s;
+  facePoly([[b[0]-pw*.42,b[1]],[b[0]+pw*.42,b[1]],[b[0]+pw*.5,b[1]-ph],[b[0]-pw*.5,b[1]-ph]],[16,52,50],{ang:()=>0,dens:2.8,len:[5,9]});
+  facePoly([[b[0]-pw*.55,b[1]-ph],[b[0]+pw*.55,b[1]-ph],[b[0]+pw*.55,b[1]-ph-ph*.16],[b[0]-pw*.55,b[1]-ph-ph*.16]],[18,54,56],{ang:()=>0,dens:3});
+  for(let i=0;i<count;i++){ const u=R(-1,1); lav(b[0]+u*pw*.3,b[1]-ph,b[0]+u*pw*.85+R(-8,8),b[1]-ph-plantH*s*R(.7,1.05),hw,{head:.42}); }
+}
+function basket(x,z,w,h){
+  const b=P(x,0,z), s=F/z, bw=w*s, bh=h*s;
+  // stems first (spilling out), then the woven basket in front
+  for(let i=0;i<46;i++){ const u=R(-1,1); lav(b[0]+u*bw*.25,b[1]-bh*.7,b[0]+u*bw*.95+R(-10,10),b[1]-bh-R(.5,1.1)*s*.45,hw0(s),{head:.4}); }
+  facePoly([[b[0]-bw*.46,b[1]],[b[0]+bw*.46,b[1]],[b[0]+bw*.55,b[1]-bh],[b[0]-bw*.55,b[1]-bh]],[34,50,54],{ang:()=>0,dens:3,len:[4,8],wid:[1.4,2.4]});
+  for(let k=1;k<5;k++){ const yy=b[1]-bh*k/5; stk(b[0],yy,bw*1.0,1.4,0,cj(30,40,36,.5),0); }
+}
+const hw0=s=>Math.max(7,s*.032);
+function paintForeground(){
+  use(ROOM);
+  basket(-.7,1.1,.4,.26);
+  pot(.78,1.2,.3,.27,.62,40,hw0(F/1.2));
+  pot(-1.3,2.0,.25,.22,.55,26,8);
+  pot(1.25,2.05,.24,.2,.5,24,8);
+}
+function paintHangingLavender(){
+  use(ROOM);
+  const rows=[[3.6,[-1.3,-.7,-.1,.6,1.2]],[2.8,[-1.45,-.8,-.2,.45,1.1,1.6]],[2.0,[-1.4,-.65,.1,.8,1.4]],[1.2,[-1.0,-.35,.35,1.0]]];
+  for(const [z,xs] of rows){
+    for(const x of xs){
+      const b=P(x+R(-.08,.08),2.58,z), s=F/z;
+      stk(b[0],b[1]-s*.05,s*.12,1,Math.PI/2,cj(34,30,60,.8),0);                       // string to the beam
+      bunch(b[0],b[1],s*.2,s*.62,Math.round(10+s*.02),Math.max(4.5,s*.036),1);
+      tie(b[0],b[1],s*.07,Math.max(4,s*.035));
+    }
+  }
+}
+
+/* ---------- 11. FINISH: canvas grain + soft vignette ---------- */
+function paintGrain(){
+  use(GRAIN);
+  for(let i=0;i<30000;i++){ const l=rnd()<.5; stk(R(0,W),R(0,H),R(1.5,4),R(.8,1.6),R(0,6.3),l?'rgba(255,244,220,.05)':'rgba(30,20,60,.05)'); }
+  const g=GRAIN.x.createRadialGradient(W/2,H*.52,H*.25,W/2,H*.52,H*.72);
+  g.addColorStop(0,'rgba(40,24,70,0)'); g.addColorStop(1,'rgba(40,24,70,.28)');
+  GRAIN.x.fillStyle=g; GRAIN.x.fillRect(0,0,W,H);
+}
+
+/* =====================================================================
+   PAINT IT, STEP BY STEP (you can watch it being painted)
+   ===================================================================== */
+const tick=()=>new Promise(r=>requestAnimationFrame(r));
+let painted=0;
+async function paintAll(){
+  rnd=mulberry32(11);
+  paintOutdoor(); paintSkyTexture(); await tick(); painted=1;
+  paintShell();                     await tick();
+  paintBeamsAndFrames();            await tick();
+  paintFireplace();                 await tick();
+  paintBed();                       await tick();
+  paintWindowDressing();
+  paintBookshelf();                 await tick();
+  paintTable();                     await tick();
+  paintChair();
+  paintForeground();                await tick();
+  paintHangingLavender();
+  paintGrain();
+  painted=2; document.getElementById('loading').style.display='none';
+}
+
+/* =====================================================================
+   LIGHT: runs every frame
+   ===================================================================== */
+const STARS=[]; { const r=mulberry32(5); for(let i=0;i<46;i++){ const door=i%2; STARS.push({x:door?lerp(300,415,r()):lerp(25,115,r()),y:lerp(470,535,r()),ph:r()*6.3,sz:.6+r()*1.4}); } }
+const FIRE=Array.from({length:30},(_,i)=>({u:(i/29)*2-1,h:.45+((i*7)%10)/18,sp:3+((i*13)%7)*.9,ph:i*1.7}));
+const MOTES=Array.from({length:40},(_,i)=>({x:(i*97%540),y:(i*53%700)+120,sp:.2+((i*7)%5)*.08,ph:i}));
+
+function bodyPos(u){ return [lerp(30,395,u), CY+10-Math.sin(Math.PI*u)*300]; }
+function sunMoon(t){
+  const u=(t-6)/12, sun=(u>=0&&u<=1)?bodyPos(u):null;
+  const v=t>=18?(t-18)/12:(t+6)/12, moon=(v>=0&&v<=1)?bodyPos(v):null;
+  const elev=(u>=0&&u<=1)?Math.sin(Math.PI*u):0;
+  return {sun,moon,elev,u};
+}
+function tint(layer,c){
+  if (c[3]<.01){ M.drawImage(layer.c,0,0,W,H); return; }
+  TMP.x.globalCompositeOperation='source-over'; TMP.x.clearRect(0,0,W,H); TMP.x.drawImage(layer.c,0,0,W,H);
+  TMP.x.globalCompositeOperation='source-atop'; TMP.x.fillStyle=rgba(c,c[3]); TMP.x.fillRect(0,0,W,H);
+  M.drawImage(TMP.c,0,0,W,H);
+}
+function glow(x,y,r,col,a){ const g=M.createRadialGradient(x,y,0,x,y,r); g.addColorStop(0,rgba(col,a)); g.addColorStop(1,rgba(col,0)); M.fillStyle=g; M.fillRect(x-r,y-r,r*2,r*2); }
+
+function drawSky(S,t,sm){
+  const g=M.createLinearGradient(0,0,0,CY); g.addColorStop(0,rgba(S.top)); g.addColorStop(.55,rgba(S.mid)); g.addColorStop(1,rgba(S.hor));
+  M.fillStyle=g; M.fillRect(0,0,W,CY); M.fillStyle=rgba(S.hor); M.fillRect(0,CY,W,H-CY);
+  M.drawImage(SKYTEX.c,0,0,W,H);
+  // stars with Van Gogh halos
+  if (S.stars>.02) for(const s of STARS){
+    const tw=.6+.4*Math.sin(t*1.4+s.ph), a=S.stars*tw;
+    M.fillStyle=`rgba(255,240,170,${a})`; M.beginPath(); M.arc(s.x,s.y,s.sz,0,6.3); M.fill();
+    M.strokeStyle=`rgba(255,235,150,${a*.35})`; M.lineWidth=.8;
+    for(let k=0;k<8;k++){ const an=k/8*6.28+s.ph; M.beginPath(); M.moveTo(s.x+Math.cos(an)*s.sz*2,s.y+Math.sin(an)*s.sz*2); M.lineTo(s.x+Math.cos(an)*s.sz*4.5,s.y+Math.sin(an)*s.sz*4.5); M.stroke(); }
+  }
+  // sun / moon: a disc ringed by radial strokes
+  const body=(p,col,rad,a)=>{ if(!p) return; glow(p[0],p[1],rad*4,col,.5*a);
+    M.fillStyle=rgba(col,.95*a); M.beginPath(); M.arc(p[0],p[1],rad,0,6.3); M.fill();
+    M.strokeStyle=rgba(col,.55*a); M.lineWidth=1.3;
+    for(let k=0;k<28;k++){ const an=k/28*6.28; M.beginPath(); M.moveTo(p[0]+Math.cos(an)*rad*1.25,p[1]+Math.sin(an)*rad*1.25); M.lineTo(p[0]+Math.cos(an)*rad*1.7,p[1]+Math.sin(an)*rad*1.7); M.stroke(); } };
+  const warm=lerp(1,0,clamp(sm.elev*2,0,1));
+  const sunCol=[255,lerp(244,150,warm),lerp(214,70,warm)];
+  body(sm.sun,sunCol,16,1); body(sm.moon,[236,240,255],12,clamp(S.stars+.2,0,1));
+}
+
+function drawLights(S,t,sm){
+  M.save(); M.globalCompositeOperation='lighter';
+  // --- sun / moon beam from the window onto the floor
+  const sunI=clamp(sm.elev*1.5,0,1), moonI=S.stars>.5?.35*S.stars:0;
+  const beam=(I,col,run,dzr)=>{
+    if (I<.03) return;
+    const hit=WIN3.map(([x,y,z])=>P(clamp(x+run*y,-1.9,1.85),0,clamp(z+dzr*run*y,.6,4.15)));
+    let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9; hit.forEach(p=>{x0=Math.min(x0,p[0]);x1=Math.max(x1,p[0]);y0=Math.min(y0,p[1]);y1=Math.max(y1,p[1]);});
+    x0=Math.max(0,x0-4); y0=Math.max(0,y0-4); x1=Math.min(W,x1+4); y1=Math.min(H,y1+4); if(x1<=x0||y1<=y0) return;
+    const L=LIGHT.x; L.globalCompositeOperation='source-over'; L.clearRect(x0,y0,x1-x0,y1-y0);
+    const cx=hit.reduce((a,p)=>a+p[0],0)/4, cy=hit.reduce((a,p)=>a+p[1],0)/4;
+    for(const [k,a] of [[1,.20],[.86,.2],[.7,.2]]){ L.fillStyle=rgba(col,a*I); pathPoly(L,hit.map(p=>[cx+(p[0]-cx)*k,cy+(p[1]-cy)*k])); L.fill(); }
+    L.globalCompositeOperation='destination-in'; L.drawImage(MASK.c,x0*SC,y0*SC,(x1-x0)*SC,(y1-y0)*SC,x0,y0,x1-x0,y1-y0); L.globalCompositeOperation='source-over';
+    M.drawImage(LIGHT.c,x0*SC,y0*SC,(x1-x0)*SC,(y1-y0)*SC,x0,y0,x1-x0,y1-y0);
+    // faint volumetric shaft in the air
+    M.fillStyle=rgba(col,.035*I);
+    for(let i=0;i<4;i++){ const a=winPoly[i],b=winPoly[(i+1)%4],c=hit[(i+1)%4],d=hit[i]; pathPoly(M,[a,b,c,d]); M.fill(); }
+  };
+  const ur=sm.u, run=lerp(1.5,.8,Math.sin(Math.PI*clamp(ur,0,1))), dzr=(.5-clamp(ur,0,1))*.9;
+  beam(sunI*(1-.3*(S.room[3]>.3?1:0)),[255,lerp(240,170,1-clamp(sm.elev*2,0,1)),lerp(200,100,1-clamp(sm.elev*2,0,1))],run,dzr);
+  beam(moonI*.55,[150,170,255],1.25,.1);
+  // window bloom on the wall (daylight leaking around the frame)
+  const wc=P(-1.9,1.8,3.3); glow(wc[0]+30,wc[1],140,[S.hor[0],S.hor[1],S.hor[2]],clamp(sunI*.16+.04,0,.25)*(S.stars>.5?0:1));
+  // --- fire: flames inside the opening, then a flickering warm glow in the room
+  const fl=.85+.15*Math.sin(t*9)+.1*Math.sin(t*23.7), fx=(fireOpen[0][0]+fireOpen[1][0])/2, fy=fireOpen[0][1], fw=fireOpen[1][0]-fireOpen[0][0], fh=fireOpen[0][1]-fireOpen[3][1];
+  M.save(); pathPoly(M,fireOpen); M.clip(); M.lineCap='round';
+  for(const f of FIRE){
+    const h=fh*f.h*(.72+.28*Math.sin(t*f.sp+f.ph)), lean=Math.sin(t*f.sp*.6+f.ph)*fw*.09, x=fx+f.u*fw*.36;
+    for(const [col,wd,k] of [['rgba(255,70,20,.40)',fw*.13,1],['rgba(255,150,40,.50)',fw*.085,.75],['rgba(255,225,120,.55)',fw*.045,.5]]){
+      M.strokeStyle=col; M.lineWidth=wd*(1-Math.abs(f.u)*.5); M.beginPath(); M.moveTo(x,fy-2); M.quadraticCurveTo(x+lean*.4,fy-h*k*.5,x+lean,fy-h*k); M.stroke();
+    }
+  }
+  M.restore();
+  const dark=1-clamp(sm.elev*1.8,0,1), fireI=(.25+.55*dark)*fl;
+  glow(fx,fy-fh*.3,300,[255,140,50],fireI*.5); glow(fx,fy-fh*.3,110,[255,190,90],fireI*.55);
+  // --- table lamp
+  const lampI=S.lamp*(.9+.1*Math.sin(t*7.3));
+  if (lampI>.02){ glow(LAMP[0],LAMP[1]-12,170,[255,190,100],lampI*.26); glow(LAMP[0],LAMP[1]-12,36,[255,220,150],lampI*.28);
+    M.fillStyle=`rgba(255,226,150,${.85*lampI})`; M.beginPath(); M.ellipse(LAMP[0],LAMP[1]-14,1.8,3.4+Math.sin(t*8)*.5,0,0,6.3); M.fill(); }
+  // --- dust motes drifting in the sunbeam
+  if (sunI>.1) for(const m of MOTES){ const x=(m.x+Math.sin(t*m.sp+m.ph)*14+t*m.sp*6)%W, y=m.y+Math.cos(t*m.sp*.8+m.ph)*10;
+    M.fillStyle=`rgba(255,240,200,${sunI*.35})`; M.beginPath(); M.arc(x,y,.9,0,6.3); M.fill(); }
+  M.restore();
+}
+
+function render(hour,t){
+  const S=sampleDay(hour), sm=sunMoon(hour);
+  M.globalCompositeOperation='source-over';
+  drawSky(S,t,sm);
+  tint(OUT,S.out);
+  tint(ROOM,S.room);
+  if (painted>=1) drawLights(S,t,sm);
+  M.drawImage(GRAIN.c,0,0,W,H);
+}
+
+/* =====================================================================
+   CLOCK + CONTROLS
+   ===================================================================== */
+let hour=7, playing=true, DAY_SECONDS=110;
+const slider=document.getElementById('slider'), clock=document.getElementById('clock'), phase=document.getElementById('phase'), playBtn=document.getElementById('play');
+const phaseName=h=>h<5?'Deep night':h<6.6?'Dawn':h<11?'Morning':h<15?'Midday':h<17.5?'Afternoon':h<19.5?'Golden hour':h<21?'Dusk':'Night';
+function hud(){ const hh=Math.floor(hour), mm=Math.floor((hour-hh)*60); clock.textContent=String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0'); phase.textContent=phaseName(hour); }
+slider.oninput=()=>{ hour=parseFloat(slider.value); playing=false; playBtn.textContent='▶'; };
+playBtn.onclick=()=>{ playing=!playing; playBtn.textContent=playing?'❚❚':'▶'; };
+const q=new URLSearchParams(location.search); if(q.has('h')){ hour=parseFloat(q.get('h')); slider.value=hour; if(q.get('pause')!=='0'){ playing=false; playBtn.textContent='▶'; } }
+let last=performance.now();
+function frame(ts){
+  const dt=(ts-last)/1000; last=ts;
+  if (playing){ hour=(hour+dt*24/DAY_SECONDS)%24; slider.value=hour; }
+  hud(); render(hour,ts/1000);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+paintAll();
+window.__setHour=h=>{hour=h;slider.value=h;playing=false;playBtn.textContent='▶';};
+</script>
+</body>
+</html>

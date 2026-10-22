@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Gifts · Croc's Workshop</title>
+<style>
+  html,body { margin:0; background:#dff0e1; color:#3b4a3f; font-family:Georgia,"Times New Roman",serif; }
+  main { max-width:900px; margin:0 auto; padding:80px 20px 40px; }
+  h1 { font-weight:400; letter-spacing:.06em; text-align:center; margin:0 0 28px; }
+  #grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:18px; }
+  figure { margin:0; background:#f6edde; padding:10px; border-radius:6px; text-align:center; box-shadow:0 4px 14px rgba(0,0,0,.12); }
+  figure img { width:100%; aspect-ratio:5/4; object-fit:cover; border:6px solid #7a5638; box-sizing:border-box; background:#fff; }
+  figcaption { font-size:14px; margin-top:6px; }
+  #empty { text-align:center; opacity:.7; font-style:italic; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Gifts</h1>
+  <div id="grid"></div>
+  <p id="empty" hidden>No gifts yet. Croc will leave one on the table soon.</p>
+</main>
+<script src="assets/menu.js"></script>
+<script src="assets/gifts.js"></script>
+<script>
+let seen=[]; try{ seen=JSON.parse(localStorage.getItem('croc_seen_gifts')||'[]'); }catch(e){}
+const opened=GIFT_LIST.filter(g=>seen.includes(g.id)), grid=document.getElementById('grid');
+document.getElementById('empty').hidden=opened.length>0;
+for(const g of opened){
+  const f=document.createElement('figure'), i=new Image(), c=document.createElement('figcaption');
+  i.src=g.image||''; i.alt=g.title; i.onerror=()=>{ i.remove(); }; c.textContent=g.title;
+  f.append(i,c); grid.appendChild(f);
+}
+</script>
+</body>
+</html>

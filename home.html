@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Croc's Workshop</title>
+<style>
+  html,body { margin:0; height:100%; background:#dff0e1; color:#3b4a3f; font-family:Georgia,"Times New Roman",serif; }
+  main { min-height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:28px; }
+  h1 { margin:0; font-weight:400; font-size:clamp(34px,7vw,64px); letter-spacing:.06em; }
+  #walk { width:100%; height:150px; display:block; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Croc's workshop</h1>
+  <canvas id="walk"></canvas>
+</main>
+<script src="assets/menu.js"></script>
+<script src="assets/croc-sheet.js"></script>
+<script src="assets/croc-slicer.js?v=4"></script>
+<script>
+const cv=document.getElementById('walk'), g=cv.getContext('2d');
+function fit(){ const r=devicePixelRatio||1; cv.width=cv.clientWidth*r; cv.height=cv.clientHeight*r; }
+fit(); addEventListener('resize',fit);
+sliceCrocSheet(window.CROC_SHEET).then(F=>{
+  const H=120, sp=70; let x=-80, dir=1, t=0, last=performance.now();
+  (function loop(now){
+    const dt=Math.min(.05,(now-last)/1000); last=now; t+=dt*7.5; x+=dir*sp*dt;
+    const W=cv.clientWidth; if(x>W+80) dir=-1; if(x<-80) dir=1;
+    const arr=F[dir>0?'walkR':'walkL'], fr=arr[Math.floor(t)%arr.length], s=H/F.__standH, r=devicePixelRatio||1;
+    g.setTransform(r,0,0,r,0,0); g.clearRect(0,0,W,cv.clientHeight);
+    g.drawImage(fr.cv,x-fr.ax*s,cv.clientHeight-10-fr.ay*s,fr.w*s,fr.h*s);
+    requestAnimationFrame(loop);
+  })(last);
+}).catch(e=>console.error(e));
+</script>
+</body>
+</html>

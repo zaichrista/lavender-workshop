@@ -1,0 +1,16 @@
+<!doctype html><meta charset="utf-8"><title>slice test</title>
+<body style="margin:0;background:#8a7aa8;color:#fff;font:12px monospace">
+<div id="info" style="padding:6px"></div><canvas id="c"></canvas>
+<script src="../assets/croc-sheet.js"></script><script>document.write('<script src="../assets/croc-slicer.js?v='+Date.now()+'"><\/script>')</script>
+<script>
+sliceCrocSheet(window.CROC_SHEET).then(f=>{
+  window.__f=f; const c=document.getElementById('c'); c.width=1500; c.height=1500; const g=c.getContext('2d');
+  let y=0, report=[];
+  for(const name of Object.keys(f)){ if(name.startsWith('__')) continue; let x=4, rowH=0;
+    g.fillStyle='#fff'; g.fillText(name+' ('+f[name].length+')',4,y+10); y+=14;
+    for(const fr of f[name]){ g.drawImage(fr.cv,x,y); g.strokeStyle='rgba(255,0,0,.8)'; g.beginPath(); g.moveTo(x+fr.ax-4,y+fr.ay); g.lineTo(x+fr.ax+4,y+fr.ay); g.moveTo(x+fr.ax,y+fr.ay-4); g.lineTo(x+fr.ax,y+fr.ay+4); g.stroke(); x+=fr.w+10; rowH=Math.max(rowH,fr.h); }
+    y+=rowH+8; report.push(name+':'+f[name].length); }
+  document.getElementById('info').textContent=report.join('  ')+'  standH='+f.__standH;
+  window.__done=true;
+}).catch(e=>{document.getElementById('info').textContent='ERR '+e.message;});
+</script>
