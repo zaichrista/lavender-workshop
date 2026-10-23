@@ -18,20 +18,20 @@
          gap:10px; align-items:center; padding:6px 12px; border-radius:999px; background:rgba(24,16,36,.5); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); }
   #play { background:none; border:0; color:var(--ink); font-size:16px; width:24px; cursor:pointer; padding:0; }
   #slider { flex:1; accent-color:#b9a0e6; }
-  #notice { position:absolute; top:max(14px,env(safe-area-inset-top)); left:50%; transform:translate(-50%,-24px); opacity:0; transition:opacity 2.2s ease,transform 2.2s ease; padding:9px 18px; border-radius:999px;
+  #notice { position:absolute; top:max(14px,env(safe-area-inset-top)); left:50%; transform:translate(-50%,-24px); opacity:0; transition:opacity 1.3s ease,transform 1.3s ease; padding:9px 18px; border-radius:999px;
             background:rgba(44,28,66,.72); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); font-size:13px; letter-spacing:.06em; pointer-events:none; white-space:nowrap; }
   #notice.show { opacity:1; transform:translate(-50%,0); }
-  #gift { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(14,8,24,.64); backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px); opacity:0; visibility:hidden; transition:opacity 1.8s ease, visibility 0s 1.8s; }
-  #gift.show { opacity:1; visibility:visible; transition:opacity 1.8s ease; }
+  #gift { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(14,8,24,.64); backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px); opacity:0; visibility:hidden; transition:opacity 1s ease, visibility 0s 1s; }
+  #gift.show { opacity:1; visibility:visible; transition:opacity 1s ease; }
   #giftCard { background:#f6edde; color:#3b2a4a; padding:14px 14px 16px; border-radius:6px; max-width:min(78vw,520px); max-height:92%; box-shadow:0 20px 60px rgba(0,0,0,.55); text-align:center; transform:rotate(-1deg); display:flex; flex-direction:column; align-items:center; gap:6px; }
   #giftCard img { max-width:100%; max-height:48vh; border:9px solid #7a5638; box-shadow:0 2px 10px rgba(0,0,0,.3); background:#fff; }
   #giftTitle { font-size:17px; margin-top:6px; }
   #giftNote { font-size:13px; opacity:.75; font-style:italic; }
   #giftClose { margin-top:6px; background:#7b5ea7; color:#fff; border:0; border-radius:999px; padding:7px 20px; font:inherit; font-size:13px; letter-spacing:.06em; cursor:pointer; }
-  #loading { position:absolute; inset:0; z-index:5; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:22px; background:radial-gradient(ellipse at 50% 45%,#e8f5e8,#c6e2cb); color:#2c4733; font-family:ui-monospace,Menlo,Consolas,"Courier New",monospace; font-size:13px; letter-spacing:.3em; pointer-events:none; opacity:1; transition:opacity 2.6s ease; }
+  #loading { position:absolute; inset:0; z-index:5; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:22px; background:radial-gradient(ellipse at 50% 45%,#e8f5e8,#c6e2cb); color:#2c4733; font-family:ui-monospace,Menlo,Consolas,"Courier New",monospace; font-size:13px; letter-spacing:.3em; pointer-events:none; opacity:1; transition:opacity 1.6s ease; }
   #loading.done { opacity:0; }
   #bar { width:min(260px,60vw); height:2px; background:rgba(44,71,51,.2); border-radius:2px; overflow:hidden; }
-  #bar i { display:block; height:100%; background:#2c4733; transform:scaleX(0); transform-origin:left; transition:transform 1.6s ease; }
+  #bar i { display:block; height:100%; background:#2c4733; transform:scaleX(0); transform-origin:left; transition:transform 1s ease; }
 </style>
 <script src="assets/menu.js"></script>
 </head>
@@ -373,7 +373,7 @@ async function paintAll(){
     paintMid(v);   if(!v) setProg(.75); await tick();
     paintFront(v); paintOut(v); paintSkyTex(v); if(!v) setProg(1); await tick();
     avail=v+1;
-    if(!v) setTimeout(()=>{ const L=document.getElementById('loading'); L.classList.add('done'); setTimeout(()=>L.style.display='none',2700); },1500);
+    if(!v) setTimeout(()=>{ const L=document.getElementById('loading'); L.classList.add('done'); setTimeout(()=>L.style.display='none',1800); },800);
   }
 }
 

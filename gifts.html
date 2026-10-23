@@ -4,34 +4,149 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Gifts · Croc's Workshop</title>
+<script src="assets/menu.js"></script>
 <style>
-  html,body { margin:0; background:#dff0e1; color:#3b4a3f; font-family:Georgia,"Times New Roman",serif; }
-  main { max-width:900px; margin:0 auto; padding:80px 20px 40px; }
-  h1 { font-weight:400; letter-spacing:.06em; text-align:center; margin:0 0 28px; }
-  #grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:18px; }
-  figure { margin:0; background:#f6edde; padding:10px; border-radius:6px; text-align:center; box-shadow:0 4px 14px rgba(0,0,0,.12); }
-  figure img { width:100%; aspect-ratio:5/4; object-fit:cover; border:6px solid #7a5638; box-sizing:border-box; background:#fff; }
-  figcaption { font-size:14px; margin-top:6px; }
-  #empty { text-align:center; opacity:.7; font-style:italic; }
+  :root { --ink:#3a3426; --mono:ui-monospace,Menlo,Consolas,"Courier New",monospace; }
+  html,body { margin:0; height:100%; background:#dfe6d2; color:var(--ink); font-family:var(--mono); overflow:hidden; }
+  #scroll { position:fixed; inset:0; overflow-x:auto; overflow-y:hidden; scrollbar-width:thin; scrollbar-color:rgba(58,52,38,.3) transparent; }
+  #wrap { position:relative; height:100%; }
+  canvas { position:absolute; left:0; top:0; display:block; }
+  #art { opacity:0; transition:opacity 1.8s ease; }
+  #art.on { opacity:1; }
+  #glow { pointer-events:none; mix-blend-mode:screen; opacity:0; }
+  #glow.on { opacity:1; animation:breathe 14s ease-in-out infinite alternate; transition:opacity 2.4s ease; }
+  @keyframes breathe { from { filter:brightness(.78); } to { filter:brightness(1.05); } }
+  #shade { position:fixed; inset:0; pointer-events:none; background:radial-gradient(ellipse at 50% 45%,transparent 55%,rgba(40,34,20,.22)); }
+  #hang { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; font-size:12px; letter-spacing:.3em; color:var(--ink); opacity:.7; pointer-events:none; transition:opacity 1.5s ease; }
+  #hang.off { opacity:0; }
+  #viewer { position:fixed; inset:0; z-index:50; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; background:rgba(30,28,18,.55); backdrop-filter:blur(5px); -webkit-backdrop-filter:blur(5px); opacity:0; visibility:hidden; transition:opacity 1s ease,visibility 0s 1s; cursor:pointer; }
+  #viewer.show { opacity:1; visibility:visible; transition:opacity 1s ease; }
+  #viewer img { max-width:82vw; max-height:70vh; border:14px solid #4a3523; box-shadow:0 20px 60px rgba(0,0,0,.45); background:#fff; }
+  #viewer div { color:#f3efe2; font-size:13px; letter-spacing:.14em; }
 </style>
 </head>
 <body>
-<main>
-  <h1>Gifts</h1>
-  <div id="grid"></div>
-  <p id="empty" hidden>No gifts yet. Croc will leave one on the table soon.</p>
-</main>
-<script src="assets/menu.js"></script>
+<div id="scroll"><div id="wrap"><canvas id="art"></canvas><canvas id="glow"></canvas></div></div>
+<div id="shade"></div>
+<div id="hang">hanging the paintings</div>
+<div id="viewer"><img id="vimg" alt=""><div id="vtitle"></div></div>
+<script src="assets/paint.js"></script>
 <script src="assets/gifts.js"></script>
 <script>
-let seen=[]; try{ seen=JSON.parse(localStorage.getItem('croc_seen_gifts')||'[]'); }catch(e){}
-const opened=GIFT_LIST.filter(g=>seen.includes(g.id)), grid=document.getElementById('grid');
-document.getElementById('empty').hidden=opened.length>0;
-for(const g of opened){
-  const f=document.createElement('figure'), i=new Image(), c=document.createElement('figcaption');
-  i.src=g.image||''; i.alt=g.title; i.onerror=()=>{ i.remove(); }; c.textContent=g.title;
-  f.append(i,c); grid.appendChild(f);
-}
+(async function(){
+  const MONO='ui-monospace,Menlo,Consolas,"Courier New",monospace';
+  let seen=[]; try{ seen=JSON.parse(localStorage.getItem('croc_seen_gifts')||'[]'); }catch(e){}
+  const list=window.GIFT_LIST, slots=Math.max(3,list.length);
+  const vw=innerWidth, vh=innerHeight, floorY=Math.round(vh*.76);
+  const fh=Math.round(Math.min(vh*.34,vw*.42)), fw=Math.round(fh*1.28), gap=Math.round(fw*.6), margin=Math.max(80,Math.round(vw*.1));
+  const total=slots*fw+(slots-1)*gap, Wc=Math.max(vw,total+margin*2), x00=Math.round((Wc-total)/2);
+  const art=document.getElementById('art'), glow=document.getElementById('glow'), wrap=document.getElementById('wrap'), scroller=document.getElementById('scroll');
+  for(const c of [art,glow]){ c.width=Wc; c.height=vh; c.style.width=Wc+'px'; c.style.height=vh+'px'; }
+  wrap.style.width=Wc+'px';
+  const gl=glow.getContext('2d'), hsl=VG.hsl, B=15, MAT=15, top=Math.round(floorY*.2), rects=[], NV=3, vars=[];
+
+  // pictures that have real files
+  const imgs=await Promise.all(list.map(gf=>new Promise(res=>{ if(!gf.image||!seen.includes(gf.id)) return res(null); const i=new Image(); i.onload=()=>res(i); i.onerror=()=>res(null); i.src=gf.image; })));
+
+  /* one whole painting of the gallery. Painted a few times with different brushwork; the page flicks between them like the workshop does. */
+  async function paintScene(seed,first){
+  const g=document.createElement('canvas'); g.width=Wc; g.height=vh; const cv0=g; const gx=g.getContext('2d'); return paint(gx,cv0);
+  async function paint(g,cv0){
+  const rnd=VG.rng(seed), R=(a,b)=>a+(b-a)*rnd();
+  /* ---- the wall: pale sage plaster, long soft horizontal strokes ---- */
+  g.fillStyle=hsl(86,16,87); g.fillRect(0,0,Wc,floorY);
+  await VG.field(g,[0,0,Wc,floorY],()=>hsl(R(80,100),R(10,22),R(82,92),.8),()=>0,{rnd,len:[28,60],wid:[6,12],dens:2.2,aj:.07,cv:.05});
+  let sh=g.createLinearGradient(0,0,0,floorY); sh.addColorStop(0,'rgba(60,66,40,.20)'); sh.addColorStop(.35,'rgba(60,66,40,0)'); sh.addColorStop(1,'rgba(60,66,40,.08)');
+  g.fillStyle=sh; g.fillRect(0,0,Wc,floorY);
+
+  /* ---- skirting + floor: warm planks, seams between ---- */
+  await VG.field(g,[0,floorY-16,Wc,floorY+2],()=>hsl(R(36,46),R(14,24),R(76,86),.9),()=>0,{rnd,len:[24,50],wid:[3,6],dens:3,aj:.05,cv:.04});
+  let y=floorY+2, rowH=16;
+  while(y<vh){
+    const h2=Math.min(rowH,vh-y), base=R(30,38);
+    await VG.field(g,[0,y,Wc,y+h2],()=>hsl(base+R(-4,4),R(30,42),R(46,58),.9),()=>0,{rnd,len:[30,70],wid:[3,6],dens:2.8,aj:.04,cv:.03});
+    g.fillStyle='rgba(70,44,22,.28)'; g.fillRect(0,y,Wc,1.3);
+    const off0=R(0,rowH*6); for(let x=off0;x<Wc;x+=R(rowH*6,rowH*10)) g.fillRect(x,y,1.3,h2);
+    y+=h2; rowH*=1.14;
+  }
+  sh=g.createLinearGradient(0,floorY,0,vh); sh.addColorStop(0,'rgba(40,24,10,.30)'); sh.addColorStop(.25,'rgba(40,24,10,0)'); sh.addColorStop(1,'rgba(40,24,10,.12)');
+  g.fillStyle=sh; g.fillRect(0,floorY,Wc,vh-floorY);
+
+  /* ---- title on the wall ---- */
+  g.fillStyle='rgba(58,52,38,.7)'; g.font=`13px ${MONO}`; try{ g.letterSpacing='5px'; }catch(e){}
+  g.textAlign='left'; g.fillText('gifts from croc',x00,Math.round(floorY*.1));
+  try{ g.letterSpacing='0px'; }catch(e){}
+
+  /* ---- the frames ---- */
+  const pictureLavender=async (box)=>{
+    const [x0,y0,x1,y1]=box, hz=y0+(y1-y0)*.45;
+    await VG.field(g,[x0,y0,x1,hz],(x,y)=>hsl(R(215,250),R(40,60),VG.lerp(86,74,(y-y0)/(hz-y0)),.9),()=>-.1,{rnd,len:[8,14],wid:[2,3.5],dens:3,aj:.2});
+    await VG.field(g,[x0,hz,x1,y1],()=>rnd()<.2?hsl(R(80,110),R(30,45),R(55,70)):hsl(R(262,288),R(40,58),R(48,70)),()=>-Math.PI/2+.12,{rnd,len:[8,16],wid:[1.6,3],dens:3.6,aj:.25});
+  };
+  for(let i=0;i<slots;i++){
+    const gf=list[i], opened=!!gf&&seen.includes(gf.id), x=x00+i*(fw+gap), ox=x-B-MAT, oy=top-B-MAT, ow=fw+2*(B+MAT), oh=fh+2*(B+MAT);
+    // lamp over the frame
+    g.strokeStyle='hsl(38,40,34)'; g.lineWidth=3; g.lineCap='round'; g.beginPath(); g.moveTo(x+fw/2,oy-34); g.lineTo(x+fw/2,oy-16); g.stroke();
+    g.fillStyle='hsl(40,50,48)'; g.beginPath(); g.ellipse(x+fw/2,oy-38,34,5,0,0,6.3); g.fill();
+    g.fillStyle='hsl(40,60,70)'; g.beginPath(); g.ellipse(x+fw/2,oy-38,24,2.5,0,0,6.3); g.fill();
+    // shadow on the wall
+    g.save(); g.shadowColor='rgba(50,48,26,.35)'; g.shadowBlur=26; g.shadowOffsetX=8; g.shadowOffsetY=14; g.fillStyle='#4a3523'; g.fillRect(ox,oy,ow,oh); g.restore();
+    // wooden frame, strokes running along each side
+    await VG.field(g,[ox,oy,ox+ow,oy+oh],()=>hsl(R(26,34),R(34,48),R(24,38),.95),(px,py)=>(py<oy+B+MAT||py>oy+oh-B-MAT)?0:Math.PI/2,{rnd,len:[8,16],wid:[2,3.5],dens:3.4,aj:.12,cv:.1});
+    // gilt slip + cream mat
+    g.fillStyle=hsl(42,52,56); g.fillRect(ox+B-3,oy+B-3,ow-2*B+6,oh-2*B+6);
+    await VG.field(g,[ox+B,oy+B,ox+ow-B,oy+oh-B],()=>hsl(R(42,50),R(22,34),R(88,94),.95),()=>0,{rnd,len:[8,16],wid:[2,3.5],dens:3,aj:.1});
+    const px0=x, py0=top, px1=x+fw, py1=top+fh;
+    g.save(); g.shadowColor='rgba(60,50,30,.5)'; g.shadowBlur=7; g.fillStyle='#fff'; g.fillRect(px0,py0,fw,fh); g.restore();
+    if(opened&&imgs[i]){
+      const im=imgs[i], s=Math.max(fw/im.naturalWidth,fh/im.naturalHeight); g.save(); g.beginPath(); g.rect(px0,py0,fw,fh); g.clip();
+      g.drawImage(im,px0+(fw-im.naturalWidth*s)/2,py0+(fh-im.naturalHeight*s)/2,im.naturalWidth*s,im.naturalHeight*s); g.restore();
+    } else if(opened){ await pictureLavender([px0,py0,px1,py1]); }
+    else { await VG.field(g,[px0,py0,px1,py1],()=>hsl(R(40,52),R(14,26),R(88,95),.9),()=>0,{rnd,len:[8,14],wid:[2,3],dens:2.6,aj:.08}); }
+    // light falling off at the picture's top edge
+    const ig=g.createLinearGradient(0,py0,0,py1); ig.addColorStop(0,'rgba(30,24,10,.22)'); ig.addColorStop(.12,'rgba(30,24,10,0)'); g.fillStyle=ig; g.fillRect(px0,py0,fw,fh);
+    // plaque
+    const pw=Math.min(fw,150), pxl=x+fw/2-pw/2, pyl=oy+oh+26;
+    g.fillStyle='hsl(44,26,94)'; g.fillRect(pxl,pyl,pw,36); g.strokeStyle='hsl(40,30,62)'; g.lineWidth=1; g.strokeRect(pxl+.5,pyl+.5,pw-1,35);
+    g.fillStyle='rgba(58,52,38,.85)'; g.textAlign='center'; g.font=`11px ${MONO}`;
+    g.fillText(opened?gf.title:(gf?'not yet opened':'to come'),x+fw/2,pyl+16,pw-12);
+    g.fillStyle='rgba(58,52,38,.5)'; g.font=`9px ${MONO}`; g.fillText(opened?'from croc':'· · ·',x+fw/2,pyl+28);
+    if(first){ rects.push({i,opened,x0:ox,y0:oy,x1:ox+ow,y1:oy+oh});
+    // warm pool of light on the wall + floor (on the glow layer so it can breathe)
+    const cx=x+fw/2, wg=gl.createRadialGradient(cx,oy-30,10,cx,oy+oh*.5,Math.max(ow,oh)*1.05);
+    wg.addColorStop(0,'rgba(255,236,170,.34)'); wg.addColorStop(.55,'rgba(255,230,160,.12)'); wg.addColorStop(1,'rgba(255,230,160,0)');
+    gl.fillStyle=wg; gl.fillRect(cx-ow*1.3,0,ow*2.6,floorY);
+    gl.save(); gl.translate(cx,floorY+(vh-floorY)*.3); gl.scale(1,.22); const fg=gl.createRadialGradient(0,0,4,0,0,ow*.9);
+    fg.addColorStop(0,'rgba(255,230,160,.30)'); fg.addColorStop(1,'rgba(255,230,160,0)'); gl.fillStyle=fg; gl.beginPath(); gl.arc(0,0,ow*.9,0,6.3); gl.fill(); gl.restore(); }
+  }
+
+  /* ---- a bench to sit on ---- */
+  { const bw=Math.min(260,fw*1.3), bx=Wc/2-bw/2, by=floorY+(vh-floorY)*.42;
+    g.save(); g.fillStyle='rgba(30,16,6,.28)'; g.beginPath(); g.ellipse(Wc/2,by+54,bw*.55,9,0,0,6.3); g.fill(); g.restore();
+    for(const lx of [bx+16,bx+bw-26]) await VG.field(g,[lx,by+8,lx+10,by+52],()=>hsl(R(22,30),R(30,40),R(20,30),.95),()=>Math.PI/2,{rnd,len:[8,14],wid:[2,3],dens:3,aj:.1});
+    await VG.field(g,[bx,by-4,bx+bw,by+12],()=>hsl(R(26,34),R(34,46),R(32,46),.95),()=>0,{rnd,len:[14,26],wid:[2.5,4],dens:3.4,aj:.05,cv:.05}); }
+
+  return cv0;
+  }
+  }
+
+  /* ---- reveal, slowly ---- */
+  vars.push(await paintScene(2024,true));
+  VG.flicker([{cv:art,frames:vars}]);
+  document.getElementById('hang').classList.add('off');
+  art.classList.add('on'); glow.classList.add('on');
+  scroller.scrollLeft=Math.max(0,(Wc-vw)/2);
+  for(let v=1;v<NV;v++) vars.push(await paintScene(2024+v*977,false));
+
+  /* ---- step closer to an opened painting ---- */
+  const viewer=document.getElementById('viewer'), vimg=document.getElementById('vimg');
+  const hit=e=>{ const x=e.clientX+scroller.scrollLeft, y=e.clientY; return rects.find(r=>r.opened&&x>=r.x0&&x<=r.x1&&y>=r.y0&&y<=r.y1); };
+  wrap.addEventListener('pointermove',e=>{ wrap.style.cursor=hit(e)?'pointer':'default'; });
+  wrap.addEventListener('click',e=>{ const r=hit(e); if(!r) return; const gf=list[r.i];
+    if(imgs[r.i]) vimg.src=imgs[r.i].src; else { const c=document.createElement('canvas'); c.width=fw; c.height=fh; c.getContext('2d').drawImage(vars[0],r.x0+B+MAT,top,fw,fh,0,0,fw,fh); vimg.src=c.toDataURL(); }
+    document.getElementById('vtitle').textContent=gf.title+(gf.note?'  ·  '+gf.note:''); viewer.classList.add('show'); });
+  viewer.addEventListener('click',()=>viewer.classList.remove('show'));
+})();
 </script>
 </body>
 </html>

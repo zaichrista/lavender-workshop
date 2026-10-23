@@ -4,35 +4,96 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Croc's Workshop</title>
+<script src="assets/menu.js"></script>
 <style>
-  html,body { margin:0; height:100%; background:#dff0e1; color:#3b4a3f; font-family:Georgia,"Times New Roman",serif; }
-  main { min-height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:28px; }
-  h1 { margin:0; font-weight:400; font-size:clamp(34px,7vw,64px); letter-spacing:.06em; }
-  #walk { width:100%; height:150px; display:block; }
+  html,body { margin:0; height:100%; background:#c6e2cb; overflow:hidden; }
+  .sr { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); }
+  #bg { position:fixed; inset:0; width:100%; height:100%; opacity:0; transition:opacity 2.2s ease; }
+  #bg.on { opacity:1; }
+  main { position:relative; min-height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:26px; text-align:center; padding:0 20px; box-sizing:border-box; }
+  @keyframes rise { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+  #title { display:block; animation:rise 2s ease .3s backwards; }
+  .enter { display:block; line-height:0; transition:transform .9s ease,filter .9s ease; animation:rise 1.6s ease 1s backwards; }
+  .enter:hover { transform:translateY(-2px); filter:brightness(1.18) saturate(1.1); }
+  #croc { width:min(360px,86vw); height:250px; display:block; animation:rise 1.6s ease 1.8s backwards; }
 </style>
 </head>
 <body>
+<h1 class="sr">Croc's workshop</h1>
+<canvas id="bg"></canvas>
 <main>
-  <h1>Croc's workshop</h1>
-  <canvas id="walk"></canvas>
+  <canvas id="title"></canvas>
+  <a class="enter" href="game.html" aria-label="enter"><canvas id="btn"></canvas></a>
+  <canvas id="croc"></canvas>
 </main>
-<script src="assets/menu.js"></script>
+<script src="assets/paint.js"></script>
 <script src="assets/croc-sheet.js"></script>
 <script src="assets/croc-slicer.js?v=4"></script>
 <script>
-const cv=document.getElementById('walk'), g=cv.getContext('2d');
-function fit(){ const r=devicePixelRatio||1; cv.width=cv.clientWidth*r; cv.height=cv.clientHeight*r; }
-fit(); addEventListener('resize',fit);
+const MONO='ui-monospace,Menlo,Consolas,"Courier New",monospace', NV=4;
+const dpr=Math.min(devicePixelRatio||1,2), blank=(w,h,r)=>{ const c=document.createElement('canvas'); c.width=Math.round(w*r); c.height=Math.round(h*r); return c; };
+
+/* ---------- the writing + the button, painted in several versions like everything else ---------- */
+const title=document.getElementById('title'), btn=document.getElementById('btn');
+const fs=Math.round(Math.max(22,Math.min(34,innerWidth*.03))), sp=fs*.2, TEXT="Croc's workshop";
+const probe=document.createElement('canvas').getContext('2d'); probe.font=`400 ${fs}px ${MONO}`;
+const tw=Math.ceil(probe.measureText(TEXT).width+TEXT.length*sp)+40, th=Math.round(fs*2.4);
+const bw=170, bh=54;
+for(const [c,w,h] of [[title,tw,th],[btn,bw,bh]]){ c.width=Math.round(w*dpr); c.height=Math.round(h*dpr); c.style.width=w+'px'; c.style.height=h+'px'; }
+const titleFrames=[], btnFrames=[], bgFrames=[];
+(async function(){
+  for(let v=0;v<NV;v++){
+    const t=blank(tw,th,dpr), tg=t.getContext('2d'); tg.scale(dpr,dpr);
+    VG.paintedText(tg,TEXT,tw/2,th/2,{r:dpr,size:fs,spacing:sp,seed:11+v*53,hsl:[145,24,30],dens:3.4});
+    const b=blank(bw,bh,dpr), bg2=b.getContext('2d'); bg2.scale(dpr,dpr);
+    await VG.handBox(bg2,4,4,bw-4,bh-4,91+v*31,{hsl:[145,24,30]});
+    VG.paintedText(bg2,'enter',bw/2,bh/2+1,{r:dpr,size:15,spacing:5,seed:5+v*17,hsl:[145,24,30],dens:3.4});
+    titleFrames.push(t); btnFrames.push(b);
+  }
+})();
+
+/* ---------- the van gogh backdrop ---------- */
+(async function(){
+  const bg=document.getElementById('bg'), r=Math.min(devicePixelRatio||1,1.25);
+  const W=bg.width=Math.min(1700,Math.round(innerWidth*r)), H=bg.height=Math.round(W*innerHeight/innerWidth);
+  for(let i=0;i<NV;i++){ const c=document.createElement('canvas'); c.width=W; c.height=H; await VG.swirl(c.getContext('2d'),W,H,31+i*977); bgFrames.push(c); if(!i) bg.classList.add('on'); }
+})();
+VG.flicker([{cv:document.getElementById('bg'),frames:bgFrames},{cv:title,frames:titleFrames},{cv:btn,frames:btnFrames}]);
+
+/* ---------- croc, feeling things ---------- */
+const cv=document.getElementById('croc'), g=cv.getContext('2d');
+cv.width=(cv.clientWidth||360)*dpr; cv.height=250*dpr;
+const EMOTES=[
+  {key:'idle',  seq:[0,0,2,0,3,0,0,1], rate:1.6, sym:'',      dur:4},
+  {key:'happy', rate:3,   sym:'hearts', dur:6},
+  {key:'talk',  rate:3,   sym:'♪',     dur:5},
+  {key:'sit',   seq:[0,1,2,1], rate:.9, sym:'…',  dur:6},
+  {key:'hurt',  seq:[1],  rate:1, sym:'!',          dur:2.6},
+  {key:'happy', rate:3,   sym:'hearts', dur:5},
+  {key:'sleep', rate:1.1, sym:'z z z', dur:7},
+];
+const hearts=[], R2=(a,b)=>a+Math.random()*(b-a);
+function heart(x,y,s,a){ g.save(); g.translate(x,y); g.scale(s,s); g.beginPath(); g.moveTo(0,.9); g.bezierCurveTo(-1.2,.1,-.7,-.9,0,-.35); g.bezierCurveTo(.7,-.9,1.2,.1,0,.9);
+  g.fillStyle=`rgba(255,126,166,${a})`; g.fill(); g.lineWidth=.16; g.strokeStyle=`rgba(170,50,100,${a*.7})`; g.stroke(); g.restore(); }
 sliceCrocSheet(window.CROC_SHEET).then(F=>{
-  const H=120, sp=70; let x=-80, dir=1, t=0, last=performance.now();
-  (function loop(now){
-    const dt=Math.min(.05,(now-last)/1000); last=now; t+=dt*7.5; x+=dir*sp*dt;
-    const W=cv.clientWidth; if(x>W+80) dir=-1; if(x<-80) dir=1;
-    const arr=F[dir>0?'walkR':'walkL'], fr=arr[Math.floor(t)%arr.length], s=H/F.__standH, r=devicePixelRatio||1;
-    g.setTransform(r,0,0,r,0,0); g.clearRect(0,0,W,cv.clientHeight);
-    g.drawImage(fr.cv,x-fr.ax*s,cv.clientHeight-10-fr.ay*s,fr.w*s,fr.h*s);
+  let ei=0, t0=performance.now()/1000, symT=0, last=t0;
+  const cw=cv.width/dpr, ch=cv.height/dpr, s=150/F.__standH, gx=cw/2, gy=ch-26;
+  (function loop(){
+    const now=performance.now()/1000, dt=Math.min(.1,now-last); last=now;
+    let e=EMOTES[ei]; if(now-t0>e.dur){ ei=(ei+1)%EMOTES.length; e=EMOTES[ei]; t0=now; symT=0; }
+    const et=now-t0; symT+=dt;
+    g.setTransform(dpr,0,0,dpr,0,0); g.clearRect(0,0,cw,ch);
+    const arr=F[e.key]||F.idle, i=e.seq?e.seq[Math.floor(et*e.rate)%e.seq.length]:Math.floor(et*e.rate);
+    const fr=arr[i%arr.length], bob=e.key==='happy'?-Math.abs(Math.sin(now*2.2))*7:Math.sin(now*1.1)*1.2;
+    g.fillStyle='rgba(31,53,38,.16)'; g.beginPath(); g.ellipse(gx,gy+2,fr.bodyW*.42*s,7,0,0,6.3); g.fill();
+    g.drawImage(fr.cv,gx-fr.ax*s,gy+bob-fr.ay*s,fr.w*s,fr.h*s);
+    if(e.sym==='hearts'){ if(Math.random()<dt*1.4) hearts.push({x:gx+R2(-40,40),y:gy-fr.bodyH*s-4,vy:R2(14,24),life:1,sz:R2(6,10),ph:Math.random()*6}); }
+    else if(e.sym){ const k=Math.min(1,et/1.2)*Math.min(1,(e.dur-et)/1.2), rise=Math.min(et,4)*5;
+      g.font='500 22px ui-monospace,Menlo,monospace'; g.textAlign='center'; g.fillStyle=`rgba(31,53,38,${.7*k})`; g.fillText(e.sym,gx+fr.bodyW*s*.3,gy-fr.bodyH*s-8-rise); }
+    for(const k of hearts){ k.y-=k.vy*dt; k.life-=dt*.3; heart(k.x+Math.sin(now*1.5+k.ph)*6,k.y,k.sz,Math.max(0,Math.min(1,k.life))); }
+    while(hearts.length&&hearts[0].life<=0) hearts.shift();
     requestAnimationFrame(loop);
-  })(last);
+  })();
 }).catch(e=>console.error(e));
 </script>
 </body>
