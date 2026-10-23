@@ -2,312 +2,713 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
 <title>Lavender Workshop</title>
 <style>
-  :root { --bg:#2a2433; --ink:#efe8f5; }
-  html,body { margin:0; background:var(--bg); color:var(--ink); font-family:Georgia,serif; }
-  body { min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; padding:16px; box-sizing:border-box; }
-  canvas { max-width:100%; height:auto; box-shadow:0 10px 40px rgba(0,0,0,.45); }
-  .bar { display:flex; gap:10px; align-items:center; font-size:14px; flex-wrap:wrap; justify-content:center; }
-  button { font:inherit; background:#4a3d5c; color:var(--ink); border:0; padding:8px 14px; border-radius:4px; cursor:pointer; }
-  button:hover { background:#5d4d73; }
+  :root { --ink:#f3ecfa; }
+  html,body { margin:0; height:100%; background:#14101c; color:var(--ink); font-family:Georgia,"Times New Roman",serif; overflow:hidden; }
+  #stage { position:relative; width:100%; height:100%; display:flex; justify-content:center; align-items:center; }
+  canvas#main { width:100%; height:100%; object-fit:cover; display:block; }
+  #hud { display:none; position:absolute; top:max(10px,env(safe-area-inset-top)); left:max(16px,env(safe-area-inset-left)); pointer-events:none; text-shadow:0 1px 6px rgba(0,0,0,.65); }
+  #clock { font-size:22px; letter-spacing:.08em; }
+  #phase { font-size:10px; letter-spacing:.3em; text-transform:uppercase; opacity:.8; margin-top:1px; }
+  body.debug #hud { display:block; }
+  body.debug #ctl { display:flex; }
+  #ctl { display:none; position:absolute; right:max(14px,env(safe-area-inset-right)); bottom:max(10px,env(safe-area-inset-bottom)); width:min(46%,360px);
+         gap:10px; align-items:center; padding:6px 12px; border-radius:999px; background:rgba(24,16,36,.5); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); }
+  #play { background:none; border:0; color:var(--ink); font-size:16px; width:24px; cursor:pointer; padding:0; }
+  #slider { flex:1; accent-color:#b9a0e6; }
+  #notice { position:absolute; top:max(14px,env(safe-area-inset-top)); left:50%; transform:translate(-50%,-24px); opacity:0; transition:opacity 1.3s ease,transform 1.3s ease; padding:9px 18px; border-radius:999px;
+            background:rgba(44,28,66,.72); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); font-size:13px; letter-spacing:.06em; pointer-events:none; white-space:nowrap; }
+  #notice.show { opacity:1; transform:translate(-50%,0); }
+  #gift { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(14,8,24,.64); backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px); opacity:0; visibility:hidden; transition:opacity 1s ease, visibility 0s 1s; }
+  #gift.show { opacity:1; visibility:visible; transition:opacity 1s ease; }
+  #giftCard { background:#f6edde; color:#3b2a4a; padding:14px 14px 16px; border-radius:6px; max-width:min(78vw,520px); max-height:92%; box-shadow:0 20px 60px rgba(0,0,0,.55); text-align:center; transform:rotate(-1deg); display:flex; flex-direction:column; align-items:center; gap:6px; }
+  #giftCard img { max-width:100%; max-height:48vh; border:9px solid #7a5638; box-shadow:0 2px 10px rgba(0,0,0,.3); background:#fff; }
+  #giftTitle { font-size:17px; margin-top:6px; }
+  #giftNote { font-size:13px; opacity:.75; font-style:italic; }
+  #giftClose { margin-top:6px; background:#7b5ea7; color:#fff; border:0; border-radius:999px; padding:7px 20px; font:inherit; font-size:13px; letter-spacing:.06em; cursor:pointer; }
+  #loading { position:absolute; inset:0; z-index:5; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:22px; background:radial-gradient(ellipse at 50% 45%,#e8f5e8,#c6e2cb); color:#2c4733; font-family:ui-monospace,Menlo,Consolas,"Courier New",monospace; font-size:13px; letter-spacing:.3em; pointer-events:none; opacity:1; transition:opacity 1.6s ease; }
+  #loading.done { opacity:0; }
+  #bar { width:min(260px,60vw); height:2px; background:rgba(44,71,51,.2); border-radius:2px; overflow:hidden; }
+  #bar i { display:block; height:100%; background:#2c4733; transform:scaleX(0); transform-origin:left; transition:transform 1s ease; }
 </style>
+<script src="assets/menu.js"></script>
 </head>
 <body>
-<canvas id="c"></canvas>
-<div class="bar">
-  <span>Lavender Workshop · after Monet · every mark is x / y / colour numbers · seed <b id="seedLabel"></b></span>
-  <button id="again">New brushwork</button>
-  <button id="save">Save PNG</button>
+<div id="stage">
+  <canvas id="main"></canvas>
+  <div id="hud"><div id="clock">07:00</div><div id="phase">Morning</div></div>
+  <div id="loading"><div>painting the scenery</div><div id="bar"><i></i></div></div>
+  <div id="notice">A gift has arrived 🎁 on the table</div>
+  <div id="gift"><div id="giftCard"><img id="giftImg" alt=""><div id="giftTitle"></div><div id="giftNote"></div><button id="giftClose">Keep it</button></div></div>
+  <div id="ctl"><button id="play" aria-label="play / pause">❚❚</button><input id="slider" type="range" min="0" max="24" step="0.01" value="7" aria-label="time of day"></div>
 </div>
 
+<script src="assets/gifts.js"></script>
+<script src="assets/croc-sheet.js"></script>
+<script src="assets/croc-slicer.js?v=4"></script>
 <script>
-/* ============================================================
-   THE PAINTING IS JUST NUMBERS.
-   Canvas is 1200 x 800. x goes left→right, y goes top→bottom.
-   Every "brush mark" is a tiny ellipse: (x, y, length, width, angle, colour).
-   Impressionism = thousands of these, layered, never blended smooth.
-   ============================================================ */
+/* =====================================================================
+   LAVENDER WORKSHOP · SCENERY FOR A GAME
+   ---------------------------------------------------------------------
+   A flat, side-on "stage set", like a painted theatre backdrop:
 
-const W = 1200, H = 800;
-const cv = document.getElementById('c');
-const ctx = cv.getContext('2d');
-cv.width = W; cv.height = H;
+     sky ▸ outdoors ▸ BACK (wall, floor, hanging lavender)
+         ▸ MID (bed, table, chair, shelf, fireplace)
+         ▸ [ your avatar goes here: Scene.drawAvatar ]
+         ▸ FRONT (plants in the foreground)
 
-/* ---------- seeded randomness: same seed = same painting ---------- */
-let rnd;
+   • Everything is painted with thousands of fine, curved strokes.
+   • Every layer is painted 4 times with different stroke placement. The game
+     flicks between those 4 paintings ~9 times a second, so the brushwork
+     quietly "boils" like Loving Vincent. The shapes never move, only the paint.
+   • The light (sky, tint, sunbeams, fire, lamp) changes with the hour.
+   ===================================================================== */
+
+const W = 1600, H = 700, SC = 1;
+const FLOOR_TOP = 560;               // where the back wall meets the floor
+const WALK_MIN_Y = 575, WALK_MAX_Y = 685;   // the strip an avatar can walk on
+const GY = 600;                      // furniture stands on this line
+const HZ = 372;                      // horizon seen through the openings
+const WIN  = [130, 269, 330, 417];   // window opening [x0,y0,x1,y1]
+const DOOR = [1410, 303, 1560, 560]; // doorway
+const N = 4;
+const CLOCK = [1240, 196, 46];   // analogue clock above the fireplace [x, y, radius]                         // brush variants
+
+/* ---------- randomness: brush jitter varies per variant, layout never does ---------- */
 function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
-const R = (a,b) => a + (b-a)*rnd();                       // random number between a and b
-const hsl = (h,s,l,a=1) => `hsla(${h},${s}%,${l}%,${a})`; // colour from hue/sat/light/alpha
-const lerp = (a,b,t) => a + (b-a)*t;
+let rnd=mulberry32(1), lr=mulberry32(5);
+const R  = (a,b)=>a+(b-a)*rnd();       // brush randomness (changes between variants)
+const LR = (a,b)=>a+(b-a)*lr();        // layout randomness (identical in every variant)
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const lerp=(a,b,t)=>a+(b-a)*t;
+const cj=(h,s,l,a=1,j=1)=>`hsla(${(h+R(-5,5)*j)|0},${clamp(s+R(-7,7)*j,0,100)|0}%,${clamp(l+R(-6,6)*j,0,100)|0}%,${a})`;
 
-/* ---------- the brush: one dab of paint ---------- */
-function dab(x,y,len,wid,ang,col){
-  ctx.save();
-  ctx.translate(x,y); ctx.rotate(ang);
-  ctx.fillStyle = col;
-  ctx.beginPath(); ctx.ellipse(0,0,len/2,wid/2,0,0,Math.PI*2); ctx.fill();
-  ctx.restore();
+/* ---------- layers ---------- */
+function makeLayer(x,y,w,h){ const c=document.createElement('canvas'); c.width=w*SC; c.height=h*SC; const g=c.getContext('2d'); g.scale(SC,SC); g.translate(-x,-y); g.lineCap='round'; return {c,g,ox:x,oy:y,w,h}; }
+const OB_WIN=[100,250,360,440], OB_DOOR=[1380,280,1590,580], FB=[0,430,W,H-430];
+const BACK=[],MID=[],FRONT=[],OUTW=[],OUTD=[],SKYW=[],SKYD=[];
+for(let v=0;v<N;v++){
+  BACK.push(makeLayer(0,0,W,H)); MID.push(makeLayer(0,0,W,H)); FRONT.push(makeLayer(...FB));
+  OUTW.push(makeLayer(OB_WIN[0],OB_WIN[1],OB_WIN[2]-OB_WIN[0],OB_WIN[3]-OB_WIN[1]));
+  OUTD.push(makeLayer(OB_DOOR[0],OB_DOOR[1],OB_DOOR[2]-OB_DOOR[0],OB_DOOR[3]-OB_DOOR[1]));
+  SKYW.push(makeLayer(OB_WIN[0],OB_WIN[1],OB_WIN[2]-OB_WIN[0],HZ-OB_WIN[1]+4));
+  SKYD.push(makeLayer(OB_DOOR[0],OB_DOOR[1],OB_DOOR[2]-OB_DOOR[0],HZ-OB_DOOR[1]+4));
 }
+const GRAIN=makeLayer(0,0,W,H), TMP=makeLayer(0,0,W,H);
+TMP.g.setTransform(SC,0,0,SC,0,0);
+const main=document.getElementById('main'); main.width=W*SC; main.height=H*SC;
+const M=main.getContext('2d'); M.scale(SC,SC); M.lineCap='round';
+let G=null, LB=[0,0,W,H];
+const use=L=>{ G=L.g; LB=[L.ox,L.oy,L.ox+L.w,L.oy+L.h]; };
 
-/* ---------- fill a region with scattered dabs ----------
-   bbox  = [x0,y0,x1,y1] area to scatter in
-   clip  = function that draws the region's outline (or null)
-   color = function (x,y) -> colour, so colour can depend on position
-   o     = { n: how many, len:[min,max], wid:[min,max], ang: base angle, aj: angle wobble } */
-function field(bbox, clip, color, o){
-  ctx.save();
-  if (clip){ ctx.beginPath(); clip(ctx); ctx.clip(); }
-  const [x0,y0,x1,y1] = bbox;
-  for (let i=0;i<o.n;i++){
-    const x = R(x0,x1), y = R(y0,y1);
-    dab(x, y, R(o.len[0],o.len[1]), R(o.wid[0],o.wid[1]), o.ang + R(-o.aj,o.aj), color(x,y,i));
+/* ---------- THE BRUSH ---------- */
+function stk(x,y,len,w,ang,col,cv=0){
+  const dx=Math.cos(ang)*len*.5, dy=Math.sin(ang)*len*.5;
+  G.strokeStyle=col; G.lineWidth=w; G.beginPath(); G.moveTo(x-dx,y-dy);
+  if (cv) G.quadraticCurveTo(x-dy*cv,y+dx*cv,x+dx,y+dy); else G.lineTo(x+dx,y+dy);
+  G.stroke();
+}
+function inPoly(x,y,p){ let c=false; for(let i=0,j=p.length-1;i<p.length;j=i++){ const a=p[i],b=p[j]; if((a[1]>y)!==(b[1]>y)&&x<(b[0]-a[0])*(y-a[1])/(b[1]-a[1])+a[0]) c=!c; } return c; }
+const pathPoly=(g,pts)=>{ g.beginPath(); pts.forEach((p,i)=>i?g.lineTo(p[0],p[1]):g.moveTo(p[0],p[1])); g.closePath(); };
+const rect=(x0,y0,x1,y1)=>[[x0,y0],[x1,y0],[x1,y1],[x0,y1]];
+const ellPts=(cx,cy,rx,ry,n=16)=>Array.from({length:n},(_,i)=>{const t=i/n*Math.PI*2;return[cx+Math.cos(t)*rx,cy+Math.sin(t)*ry];});
+
+/* fill a shape with scattered strokes. col(x,y), ang(x,y) are functions */
+function paintPoly(pts,col,ang,o={}){
+  if (o.coarse) paintPoly(pts,col,ang,{len:[16,28],wid:[4,8],dens:1.7,aj:.4,cv:.22});     // loose underpainting first
+  const len=o.len||[7,13], wid=o.wid||[1.5,2.8], dens=o.dens??2.9, cv=o.cv??.14, aj=o.aj??.28;
+  let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+  for(const p of pts){ x0=Math.min(x0,p[0]); x1=Math.max(x1,p[0]); y0=Math.min(y0,p[1]); y1=Math.max(y1,p[1]); }
+  x0=Math.max(x0,LB[0]-4); y0=Math.max(y0,LB[1]-4); x1=Math.min(x1,LB[2]+4); y1=Math.min(y1,LB[3]+4);
+  if (x1<=x0||y1<=y0) return;
+  const avg=((len[0]+len[1])/2)*((wid[0]+wid[1])/2);
+  const n=Math.min((x1-x0)*(y1-y0)*dens/avg,o.max||260000)|0;
+  G.save(); pathPoly(G,pts); G.clip();
+  for(let i=0;i<n;i++){ const x=R(x0,x1), y=R(y0,y1); if(!inPoly(x,y,pts)) continue;
+    stk(x,y,R(len[0],len[1]),R(wid[0],wid[1]),ang(x,y)+R(-aj,aj),col(x,y,i),cv*R(-1,1)); }
+  G.restore();
+}
+/* dark blue contour strokes along an edge (the Van Gogh outline) */
+function edge(pts,[h,s,l]=[250,34,20],w=1.4,a=.5){
+  for(let i=0;i<pts.length;i++){
+    const A=pts[i],B=pts[(i+1)%pts.length], d=Math.hypot(B[0]-A[0],B[1]-A[1]); if(d<1) continue;
+    const n=Math.max(1,Math.round(d/6)), ang=Math.atan2(B[1]-A[1],B[0]-A[0]);
+    for(let k=0;k<n;k++){ const t=(k+.5)/n; stk(A[0]+(B[0]-A[0])*t+R(-.6,.6),A[1]+(B[1]-A[1])*t+R(-.6,.6),d/n*1.35,w*R(.7,1.3),ang+R(-.06,.06),cj(h,s,l,a,.6)); }
   }
-  ctx.restore();
 }
-
-/* ---------- curves: a point on a bend between p0 and p2 pulled toward c ---------- */
-function bez(p0,c,p2,t){
-  const u = 1-t;
-  const x = u*u*p0[0] + 2*u*t*c[0] + t*t*p2[0];
-  const y = u*u*p0[1] + 2*u*t*c[1] + t*t*p2[1];
-  const dx = 2*u*(c[0]-p0[0]) + 2*t*(p2[0]-c[0]);
-  const dy = 2*u*(c[1]-p0[1]) + 2*t*(p2[1]-c[1]);
-  const a = Math.atan2(dy,dx);
-  return { x, y, a, nx: -Math.sin(a), ny: Math.cos(a) };
+const flat=()=>0, vert=()=>Math.PI/2;
+function facePoly(pts,base,o={}){
+  const [h,s,l]=base;
+  paintPoly(pts,()=>cj(h,s,l,.97,o.j??.8),o.ang||flat,{len:o.len||[6,11],wid:o.wid||[1.4,2.5],dens:o.dens??3,aj:o.aj??.2,coarse:o.coarse});
+  if (o.edge!==false) edge(pts,o.edgeCol||[250,34,20],o.ew||1.4,o.ea||.5);
 }
-const dist = (p,q) => Math.hypot(p[0]-q[0], p[1]-q[1]);
+const box=(x0,y0,x1,y1,base,o)=>facePoly(rect(x0,y0,x1,y1),base,o);
 
-/* ---------- a sprig of lavender: green stem + a head of purple flecks ---------- */
-function sprig(p0,c,p2,o={}){
-  const headFrac = o.head ?? 0.32, hw = o.hw ?? 13, sw = o.sw ?? 3.4;
-  const steps = Math.ceil(dist(p0,p2)/2.5);
-  for (let i=0;i<=steps;i++){
-    const t = i/steps, p = bez(p0,c,p2,t);
-    dab(p.x,p.y, 9, sw*R(.8,1.2), p.a, hsl(R(75,115),R(16,30),R(40,58),.9));
+/* ---------- LAVENDER: a stem + a head of purple flecks ---------- */
+const bez=(p0,c,p2,t)=>{const u=1-t;return{x:u*u*p0[0]+2*u*t*c[0]+t*t*p2[0],y:u*u*p0[1]+2*u*t*c[1]+t*t*p2[1],a:Math.atan2(2*u*(c[1]-p0[1])+2*t*(p2[1]-c[1]),2*u*(c[0]-p0[0])+2*t*(p2[0]-c[0]))};};
+function lav(bx,by,tx,ty,hw,o={}){
+  const L=Math.hypot(tx-bx,ty-by); if(L<3) return;
+  const ang=Math.atan2(ty-by,tx-bx), bend=(o.bend??LR(-.13,.13))*L;
+  const c=[(bx+tx)/2-Math.sin(ang)*bend,(by+ty)/2+Math.cos(ang)*bend], p0=[bx,by], p2=[tx,ty];
+  const headF=o.head??.4, hue=o.hue??270, n=Math.max(5,Math.ceil(L/2));
+  const e=bez(p0,c,p2,1-headF*.85);
+  G.strokeStyle=cj(95,22,44,.95,.6); G.lineWidth=Math.max(.8,hw*.2);
+  G.beginPath(); G.moveTo(bx,by); G.quadraticCurveTo(lerp(bx,c[0],1-headF*.85),lerp(by,c[1],1-headF*.85),e.x,e.y); G.stroke();
+  const per=Math.max(2,Math.round(hw*.55));
+  for(let i=0;i<=n;i++){
+    const t=i/n; if(t<1-headF) continue;
+    const k=(t-(1-headF))/headF, prof=.2+.8*Math.sin(Math.PI*Math.pow(k,.75)), p=bez(p0,c,p2,t), nx=-Math.sin(p.a), ny=Math.cos(p.a);
+    for(let j=0;j<per;j++){ const off=R(-1,1)*hw*prof*.5;
+      stk(p.x+nx*off,p.y+ny*off,hw*R(.5,.95),Math.max(1,hw*R(.2,.38)),p.a+R(-.9,.9),cj(hue+R(-10,12),R(40,64),R(40,70)+(Math.abs(off)<hw*.12?6:0),.9,.5),.3); }
+    if(rnd()<.25) stk(p.x+nx*R(-hw,hw)*.4,p.y+ny*R(-hw,hw)*.4,hw*.5,hw*.25,R(0,6.3),cj(hue+14,45,82,.8),0);
   }
-  for (let i=0;i<=steps;i++){
-    const t = i/steps;
-    if (t < 1-headFrac) continue;
-    const k = (t-(1-headFrac))/headFrac;                      // 0 at base of the head → 1 at the tip
-    const prof = 0.18 + 0.82*Math.sin(Math.PI*Math.pow(k,0.75)); // fat in the middle, tapered ends
-    const p = bez(p0,c,p2,t);
-    for (let j=0;j<6;j++){
-      const off = R(-1,1)*hw*prof;
-      const x = p.x + p.nx*off, y = p.y + p.ny*off;
-      const light = R(38,68) + (Math.abs(off)<hw*.25 ? 6 : 0);
-      dab(x,y, R(7,14), R(5,9), p.a + R(-.7,.7), hsl(R(255,288),R(35,62),light,.88));
+}
+function bunch(bx,by,spread,len,count,hw,dir=1){
+  for(let i=0;i<count;i++){ const u=count>1?i/(count-1)-.5:0;
+    lav(bx+LR(-2,2)+u*spread*.12,by, bx+u*spread+LR(-spread*.12,spread*.12),by+dir*len*LR(.82,1.06),hw,{head:.45}); }
+}
+const tie=(x,y,w,h)=>box(x-w/2,y,x+w/2,y+h,[345,36,76],{edge:false,dens:3,len:[3,6],wid:[1,1.8]});
+
+/* =====================================================================
+   THE DAY: [hour, skyTop, skyMid, skyHorizon, roomTint, outsideTint, stars, lamp]
+   ===================================================================== */
+const KEYS=[
+ [0 ,[10,14,48],[24,34,94],[52,70,128],[12,16,52,.62],[8,12,46,.55],1,1],
+ [4.5,[18,22,64],[40,54,112],[84,92,140],[20,24,60,.55],[14,18,56,.45],.8,1],
+ [6 ,[70,86,150],[200,150,170],[255,184,120],[70,50,100,.30],[255,170,140,.14],.15,.75],
+ [7.5,[110,160,220],[190,205,235],[255,214,160],[255,200,160,.08],[255,210,170,.06],0,.2],
+ [10,[70,140,225],[140,188,240],[214,226,246],[255,244,225,0],[255,255,255,0],0,0],
+ [13,[60,130,220],[130,184,240],[220,232,248],[255,244,225,0],[255,255,255,0],0,0],
+ [16.5,[86,130,206],[180,190,225],[250,214,170],[255,200,140,.10],[255,210,150,.08],0,.1],
+ [18,[80,76,150],[226,120,120],[255,170,70],[255,150,100,.20],[255,150,100,.18],0,.4],
+ [19,[44,42,110],[150,86,130],[250,130,90],[120,70,110,.34],[160,80,100,.30],.2,.8],
+ [20.5,[20,24,76],[48,52,120],[110,86,140],[30,30,80,.5],[24,26,80,.45],.7,1],
+ [22,[12,16,52],[28,38,100],[58,74,134],[14,18,54,.6],[10,14,50,.52],1,1],
+ [24,[10,14,48],[24,34,94],[52,70,128],[12,16,52,.62],[8,12,46,.55],1,1],
+];
+const lerpv=(a,b,f)=>Array.isArray(a)?a.map((v,i)=>lerpv(v,b[i],f)):a+(b-a)*f;
+function sampleDay(t){ let i=0; while(i<KEYS.length-2&&t>=KEYS[i+1][0]) i++; const a=KEYS[i],b=KEYS[i+1]; let f=(t-a[0])/(b[0]-a[0]); f=f*f*(3-2*f); const r=lerpv(a.slice(1),b.slice(1),f); return{top:r[0],mid:r[1],hor:r[2],room:r[3],out:r[4],stars:r[5],lamp:r[6]}; }
+const rgba=(c,a=1)=>`rgba(${c[0]|0},${c[1]|0},${c[2]|0},${a})`;
+
+/* =====================================================================
+   PAINTING THE SET (called once per variant, each with different brush randomness)
+   ===================================================================== */
+const holeRects=g=>{ for(const [x0,y0,x1,y1] of [WIN,DOOR]) g.rect(x0,y0,x1-x0,y1-y0); };
+const wave=(x,y)=>Math.sin(x*.011+y*.017)*.5+Math.cos(y*.03)*.4;
+
+function paintBack(v){
+  use(BACK[v]);
+  G.save(); G.beginPath(); G.rect(0,0,W,H); holeRects(G); G.clip('evenodd');
+  // plaster wall, lavender wainscot below the rail
+  paintPoly(rect(0,0,W,FLOOR_TOP+6),(x,y)=>{
+    const vg=Math.pow((x-W/2)/(W/2),2)*7;
+    if (y>438){ const seam=(x%72)<3.5; return cj(264,seam?19:15,(seam?52:62)-vg,.97); }
+    if (y>428) return cj(28,38,40-vg,.97);
+    return cj(R(34,40),30,84-vg-(y<110?6:0),.97);
+  },wave,{coarse:true,aj:.4});
+  // floor: planks, rug
+  paintPoly(rect(0,FLOOR_TOP,W,H),(x,y)=>{
+    const row=Math.floor((y-FLOOR_TOP)/19), shade=((row*53)%9)-4;
+    if (x>420&&x<980&&y>614&&y<686){ if(x<432||x>968||y<622||y>678) return cj(268,36,40,.97); const s=Math.floor(x/26); return s%3===0?cj(275,40,66,.97):s%3===1?cj(40,30,86,.97):cj(262,26,74,.97); }
+    return cj(30+((row*37)%7)-3,40,34+shade+(y-FLOOR_TOP)*.01,.97);
+  },(x,y)=>Math.sin(x*.01+y*.05)*.07,{coarse:true,len:[9,16],wid:[1.6,2.8],aj:.12});
+  G.restore();
+  // soft shadows where things stand
+  for(const [cx,rx] of [[212,190],[730,150],[560,50],[1020,80],[1240,110]]) paintPoly(ellPts(cx,GY+8,rx,13,20),()=>cj(262,22,14,.24),flat,{dens:1.8,len:[10,20],wid:[2,3.4],aj:.08});
+  // ceiling boards + the big beam
+  box(0,0,W,50,[26,36,20],{ang:vert,edge:false,coarse:true});
+  box(0,50,W,96,[26,42,28],{ang:flat,coarse:true});
+  // skirting
+  box(0,548,W,562,[28,38,34],{edge:false});
+  // window: frame, mullions, sill, curtains, vase
+  const [wx0,wy0,wx1,wy1]=WIN, fr=[40,26,90];
+  box(wx0-12,wy0-12,wx1+12,wy0,fr,{ea:.4}); box(wx0-12,wy1,wx1+12,wy1+8,fr,{ea:.4});
+  box(wx0-12,wy0,wx0,wy1,fr,{ang:vert,ea:.4}); box(wx1,wy0,wx1+12,wy1,fr,{ang:vert,ea:.4});
+  box((wx0+wx1)/2-4,wy0,(wx0+wx1)/2+4,wy1,fr,{ang:vert,ea:.4}); box(wx0,(wy0+wy1)/2-3,wx1,(wy0+wy1)/2+3,fr,{ea:.4});
+  box(wx0-30,wy1+8,wx1+30,wy1+20,[38,28,88],{ea:.4});
+  for(const [a,b] of [[wx0-52,wx0-14],[wx1+14,wx1+52]]) facePoly([[a,wy0-24],[b,wy0-24],[b-4,wy1+80],[a+4,wy1+80]],[268,24,76],{ang:vert,aj:.12,ea:.35,coarse:true});
+  box(208,wy1-26,228,wy1,[196,28,78],{edge:false}); bunch(218,wy1-24,34,56,8,6.5,-1);
+  // doorway: frame + threshold
+  const [dx0,dy0,dx1,dy1]=DOOR, df=[28,40,32];
+  box(dx0-16,dy0-16,dx1+16,dy0,df,{}); box(dx0-16,dy0,dx0,dy1,df,{ang:vert}); box(dx1,dy0,dx1+16,dy1,df,{ang:vert});
+  box(dx0-16,dy1-6,dx1+16,dy1+8,[220,8,60],{});
+  // hanging lavender from the beam
+  for(let x=38;x<W-20;x+=LR(70,96)){ const len=LR(80,175), b=[x,96];
+    if (x>wx0-70&&x<wx1+70&&len>150) { continue; }
+    stk(x,86,12,1,Math.PI/2,cj(34,30,60,.8),0);
+    bunch(x,100,36,len,11,6.5,1); tie(x,100,12,7);
+  }
+}
+
+function paintMid(v){
+  use(MID[v]);
+  const wood=[28,40,34], woodL=[32,44,56], Y=[44,78,56], straw=[46,56,66];
+  /* ---- BED, left, under the window ---- */
+  box(40,430,66,596,wood,{ang:vert,coarse:true});                                    // headboard
+  box(40,545,386,580,[26,38,28],{});                                                 // frame
+  box(44,580,56,GY,wood,{ang:vert}); box(372,580,384,GY,wood,{ang:vert});            // legs
+  box(66,508,376,546,[40,22,90],{});                                                 // linen mattress
+  const qc=[[270,36,58],[282,30,70],[255,30,50],[40,28,86],[300,26,70],[268,40,44],[240,24,66]], cols=8, rows=4, qx0=150, qx1=382, qy0=488, qy1=572;
+  for(let i=0;i<cols;i++)for(let j=0;j<rows;j++){
+    const x0=lerp(qx0,qx1,i/cols), x1=lerp(qx0,qx1,(i+1)/cols), y0=lerp(qy0,qy1,j/rows), y1=lerp(qy0,qy1,(j+1)/rows), c=qc[Math.floor(LR(0,qc.length))];
+    facePoly(rect(x0,y0,x1,y1),c,{edgeCol:[250,30,30],ea:.35,dens:3,len:[5,9]});
+  }
+  box(380,520,394,592,wood,{ang:vert});                                              // footboard
+  facePoly(ellPts(104,486,42,22),[40,18,92],{ea:.4}); facePoly(ellPts(146,482,36,20),[36,20,90],{ea:.4}); // pillows
+  lav(300,484,330,470,8,{head:.5});
+  /* ---- CHAIR (Van Gogh yellow), facing right ---- */
+  box(522,556,534,GY,Y,{ang:vert}); box(576,556,588,GY,Y,{ang:vert});
+  box(518,546,592,558,[46,70,50],{});
+  box(514,536,592,547,straw,{});                                                     // woven seat
+  box(514,452,526,540,Y,{ang:vert}); box(528,456,538,538,Y,{ang:vert});             // back posts
+  box(512,450,542,464,Y,{}); box(514,490,540,498,Y,{}); box(514,520,540,528,Y,{});   // rails
+  facePoly([[508,458],[546,458],[548,516],[534,526],[518,508],[506,486]],[268,26,70],{ang:vert,aj:.3,ea:.4});   // lilac shawl
+  /* ---- TABLE with tools ---- */
+  box(612,502,626,GY,[26,44,34],{ang:vert}); box(836,502,850,GY,[26,44,34],{ang:vert});
+  box(604,500,858,522,[28,40,44],{});
+  box(594,486,868,502,woodL,{coarse:true});
+  const TY=486;
+  for(let i=0;i<8;i++) lav(690,TY-4+(i-4)*1.1,616+LR(-6,6),TY-8+(i-4)*1.5,6,{head:.34,bend:LR(-.05,.05)});           // bundle being tied
+  tie(668,TY-14,7,16);
+  box(732,TY-20,752,TY,[44,34,76],{edge:true,dens:3,len:[3,5],wid:[1,1.4]}); facePoly(ellPts(742,TY-20,10,3.6),[44,36,82],{ea:.4});   // twine spool
+  stk(700,TY-3,26,2,-.2,cj(215,16,74,.95),0); stk(700,TY-3,26,2,.15,cj(215,16,74,.95),0);                                  // scissors
+  facePoly([[762,TY-14],[806,TY-14],[798,TY],[770,TY]],[30,46,46],{ea:.4});                                                // wooden bowl
+  for(let i=0;i<22;i++) stk(R(766,802),TY-16+R(-2,1),R(3,5),R(1.6,2.6),R(0,6.3),cj(R(262,286),R(40,60),R(48,68),.95));
+  box(818,TY-44,838,TY,[195,28,84],{edge:false,j:.5}); for(let i=0;i<9;i++) lav(828+LR(-4,4),TY-40,828+(i-4)*7,TY-92-LR(0,14),7.5,{head:.4}); // jar of lavender
+  box(846,TY-30,858,TY,[42,60,52],{ea:.4}); box(848,TY-60,856,TY-30,[195,30,86],{edge:false,dens:2,j:.4});                   // oil lamp
+  /* ---- BOOKSHELF ---- */
+  box(952,322,1088,594,[24,35,16],{ang:vert,edge:false});
+  const shelves=[590,520,450,380], bookCols=[[350,32,40],[215,34,38],[148,24,34],[268,30,46],[40,46,60],[8,40,40],[200,28,52],[285,28,60],[30,30,46],[170,22,42]];
+  shelves.forEach((sy,si)=>{
+    let x=956;
+    while(x<1082){
+      const r=LR(0,1);
+      if (si===1 && r<.2){ box(x,sy-30,x+18,sy,[195,28,80],{edge:false,j:.5}); bunch(x+9,sy-28,18,34,6,4.5,-1); x+=26; continue; }
+      if (si===3 && r<.2){ box(x,sy-22,x+30,sy,[34,46,52],{ea:.4}); x+=36; continue; }
+      const w=LR(9,17), h=LR(36,64), c=bookCols[Math.floor(LR(0,bookCols.length))];
+      box(x,sy-h,x+w,sy,c,{ang:vert,dens:3,len:[4,7],wid:[1.2,2],ea:.35}); x+=w+1;
     }
-    if (rnd() < .35) dab(p.x+p.nx*R(-hw,hw)*prof, p.y+p.ny*R(-hw,hw)*prof, R(4,8), R(3,6), R(0,6.3), hsl(R(275,300),R(40,70),R(76,88),.8)); // pale highlight fleck
-  }
-}
-
-/* ---------- a satin ribbon along a curve ---------- */
-function ribbon(p0,c,p2,w0,w1,base){
-  const steps = Math.ceil(dist(p0,p2)/2);
-  for (let i=0;i<=steps;i++){
-    const t = i/steps, p = bez(p0,c,p2,t), w = lerp(w0,w1,t);
-    const sheen = Math.sin(t*7 + base.ph)*0.5 + 0.5;          // satin shine, a wave along the length
-    for (let j=0;j<5;j++){
-      const off = R(-.5,.5)*w;
-      const edge = Math.abs(off)/(w*.5);                      // 0 centre → 1 edge
-      const l = base.l + sheen*10 - edge*9 + R(-3,3);
-      dab(p.x+p.nx*off, p.y+p.ny*off, R(8,14), R(3,6), p.a+R(-.12,.12), hsl(base.h+R(-4,4), base.s, l, .92));
-    }
-  }
-}
-/* a closed ribbon loop (for the bow) */
-function ribbonLoop(cx,cy,rx,ry,rot,w,base){
-  const steps = 120;
-  for (let i=0;i<steps;i++){
-    const th = i/steps*Math.PI*2;
-    const ex = Math.cos(th)*rx, ey = Math.sin(th)*ry;
-    const x = cx + ex*Math.cos(rot) - ey*Math.sin(rot);
-    const y = cy + ex*Math.sin(rot) + ey*Math.cos(rot);
-    const tx = -Math.sin(th)*rx, ty = Math.cos(th)*ry;
-    const a = Math.atan2(tx*Math.sin(rot)+ty*Math.cos(rot), tx*Math.cos(rot)-ty*Math.sin(rot));
-    const sheen = Math.sin(th*2 + base.ph)*.5+.5;
-    for (let j=0;j<5;j++){
-      const off = R(-.5,.5)*w;
-      const edge = Math.abs(off)/(w*.5);
-      dab(x - Math.sin(a)*off, y + Math.cos(a)*off, R(8,13), R(3,6), a+R(-.1,.1), hsl(base.h+R(-4,4), base.s, base.l + sheen*10 - edge*9 + R(-3,3), .92));
-    }
-  }
-}
-
-/* ---------- soft cast shadow (an ellipse of dark, translucent dabs) ---------- */
-function shadow(cx,cy,rx,ry,a=.22){
-  field([cx-rx,cy-ry,cx+rx,cy+ry], c=>c.ellipse(cx,cy,rx,ry,0,0,Math.PI*2),
-    ()=>hsl(R(255,285),R(22,34),R(14,24),a),
-    {n:Math.round(rx*ry/28), len:[16,40], wid:[4,9], ang:0, aj:.12});
-}
-
-/* ============================================================
-   THE SCENE
-   ============================================================ */
-function paint(seed){
-  rnd = mulberry32(seed);
-  ctx.clearRect(0,0,W,H);
-  ctx.fillStyle = '#d9cde6'; ctx.fillRect(0,0,W,H);
-
-  const WIN = {x:110, y:80, w:320, h:320};
-  const glow = [270, 230];                                    // where the window light comes from
-
-  /* ---- 1. back wall: pale lilac, warmer near the window ---- */
-  const wallCol = (x,y)=>{
-    const g = Math.exp(-Math.hypot(x-glow[0], y-glow[1])/520);
-    if (rnd() < g*.45) return hsl(R(36,50),R(50,70),R(86,93),.55);   // cream light
-    return hsl(R(258,292),R(24,40),R(74,86)-(1-g)*6,.55);            // lilac wall
-  };
-  field([0,0,W,540], null, wallCol, {n:900,  len:[70,160], wid:[36,70], ang:.15, aj:.5});
-  field([0,0,W,540], null, wallCol, {n:6500, len:[18,44],  wid:[8,16],  ang:.3,  aj:.8});
-
-  /* ---- 2. the window: Monet haze of a lavender field outside ---- */
-  const inWin = c=>c.rect(WIN.x,WIN.y,WIN.w,WIN.h);
-  const winBox = [WIN.x,WIN.y,WIN.x+WIN.w,WIN.y+WIN.h];
-  field(winBox, inWin, (x,y)=>{
-    if (y < 215) return hsl(R(200,225),R(40,62),R(72,86),.7);                        // morning sky
-    if (y < 245) return hsl(R(260,300),R(30,50),R(76,88),.7);                        // haze at the horizon
-    const depth = (y-245)/155;                                                       // 0 far → 1 near
-    const row = Math.floor((y-245 + Math.sin(x*.045)*5 + R(-4,4))/(5+depth*9));     // wavy rows, wider up close
-    const haze = 1-depth;                                                            // far rows fade toward lilac
-    return row%2 ? hsl(R(256,286),R(42,60)-haze*14,R(38,58)+haze*18,.7) : hsl(R(70,100),R(20,34)-haze*8,R(54,70)+haze*10,.6);
-  }, {n:8200, len:[16,36], wid:[5,11], ang:0, aj:.12});
-  field(winBox, inWin, ()=>hsl(R(42,56),R(70,90),R(88,96),.12), {n:160, len:[20,50], wid:[10,24], ang:0, aj:.8}); // sun glare
-  // window frame + sill
-  const frame = c=>{ c.rect(WIN.x-10,WIN.y-10,WIN.w+20,14); c.rect(WIN.x-10,WIN.y-10,14,WIN.h+20); c.rect(WIN.x+WIN.w-4,WIN.y-10,14,WIN.h+20);
-    c.rect(WIN.x+WIN.w/2-6,WIN.y-10,12,WIN.h+20); c.rect(WIN.x-10,WIN.y+WIN.h/2-5,WIN.w+20,10); };
-  field([WIN.x-14,WIN.y-14,WIN.x+WIN.w+14,WIN.y+WIN.h+14], frame, ()=>hsl(R(36,52),R(28,50),R(88,96),.9), {n:2600, len:[10,22], wid:[4,9], ang:0, aj:.9});
-  field([WIN.x-24,WIN.y+WIN.h-6,WIN.x+WIN.w+24,WIN.y+WIN.h+16], null, ()=>hsl(R(34,48),R(22,40),R(82,92),.85), {n:520, len:[16,34], wid:[5,10], ang:0, aj:.05});
-
-  /* ---- 3. hanging dried lavender on the wall (right) ---- */
-  const HX = 985;
-  ctx.save(); // nail + string
-  dab(HX,86,7,7,0,hsl(30,10,32,.9));
-  ctx.restore();
-  for (let i=0;i<5;i++){
-    const dx = (i-2)*9;
-    sprig([HX+dx*.3,112],[HX+dx*1.3,190],[HX+dx*2.2,296+R(-14,14)],{head:.42,hw:12,sw:3});
-  }
-  ribbon([HX-26,128],[HX,134],[HX+26,128],10,10,{h:345,s:34,l:78,ph:1});
-  ribbon([HX,132],[HX-10,152],[HX-18,170],7,6,{h:345,s:34,l:76,ph:2});
-  ribbon([HX,132],[HX+8,148],[HX+16,166],7,6,{h:345,s:34,l:76,ph:4});
-
-  /* ---- 4. the wooden desk ---- */
-  const DESK = 500;
-  field([0,DESK,W,H+10], null, (x,y)=>{
-    const g = 6*Math.sin(y*.085 + Math.sin(x*.004)*3) + 4*Math.sin(y*.31+x*.002);    // wood grain wave
-    return hsl(R(22,34),R(34,52),R(36,48)+g*.6,.62);
-  }, {n:17000, len:[70,230], wid:[3,8], ang:0, aj:.025});
-  field([0,DESK,W,H+10], null, ()=>hsl(R(18,30),R(30,46),R(26,36),.35), {n:3200, len:[120,300], wid:[1.5,3], ang:0, aj:.015}); // fine dark grain lines
-  // back edge of desk, catching light
-  field([0,DESK-6,W,DESK+12], null, ()=>hsl(R(28,40),R(40,60),R(56,70),.7), {n:700, len:[30,90], wid:[3,7], ang:0, aj:.02});
-  // front edge, dark
-  field([0,770,W,H+10], null, ()=>hsl(R(18,28),R(30,44),R(20,28),.7), {n:1500, len:[50,160], wid:[4,10], ang:0, aj:.02});
-  // window light falling across the desk
-  field([150,DESK,700,H], c=>{ c.moveTo(330,DESK); c.lineTo(640,DESK); c.lineTo(520,H); c.lineTo(120,H); c.closePath(); },
-    (x,y)=>hsl(R(40,52),R(60,85),R(80,90),.05*Math.exp(-Math.abs(x-420)/160)), {n:2200, len:[40,120], wid:[8,18], ang:0, aj:.05});
-
-  /* ---- 5. WATER BOWL (right), a nod to Monet's water lilies ---- */
-  const B = {x:985, y:672};
-  shadow(B.x+36, B.y+32, 150, 22, .26);
-  const ell = (cx,cy,rx,ry)=>(c=>c.ellipse(cx,cy,rx,ry,0,0,Math.PI*2));
-  field([B.x-135,B.y-5,B.x+135,B.y+60], ell(B.x,B.y+16,132,40), (x,y)=>hsl(R(34,50),R(12,28),lerp(78,56,(y-B.y)/50),.85), {n:900, len:[10,24], wid:[4,9], ang:0, aj:.3}); // bowl body
-  field([B.x-135,B.y-42,B.x+135,B.y+42], ell(B.x,B.y,132,38), ()=>hsl(R(40,52),R(32,56),R(86,95),.9), {n:900, len:[10,22], wid:[4,8], ang:0, aj:.4});   // cream rim
-  field([B.x-120,B.y-32,B.x+120,B.y+32], ell(B.x+2,B.y+3,117,30), (x,y)=>{                                                                                // the water
-    const k = (y-(B.y-30))/60;
-    const r = rnd();
-    if (r < .22) return hsl(R(270,295),R(34,56),R(60,76),.6);       // lavender reflected
-    if (r < .34) return hsl(R(335,352),R(36,56),R(78,88),.5);       // pink cloud
-    if (r < .46) return hsl(R(44,54),R(60,86),R(84,94),.5);         // sun
-    return hsl(R(186,212),R(32,52),lerp(78,60,k),.62);              // sky-blue water
-  }, {n:2300, len:[14,32], wid:[3,7], ang:0, aj:.06});
-  // petals + a floating sprig
-  for (let i=0;i<14;i++){ const x=B.x+R(-90,90), y=B.y+R(-18,24); dab(x,y,R(8,13),R(4,7),R(-.5,.5),hsl(R(262,288),R(40,60),R(52,70),.9)); }
-  sprig([B.x-70,B.y+8],[B.x-30,B.y-4],[B.x+10,B.y+10],{head:.42,hw:8,sw:2.4});
-  field([B.x-80,B.y-4,B.x+90,B.y+14], null, ()=>hsl(R(190,220),R(34,54),R(86,95),.28), {n:90, len:[12,30], wid:[1.5,3], ang:0, aj:.03}); // ripple lines
-
-  /* ---- 6. GLASS JAR of water and standing lavender (centre-right) ---- */
-  const J = {x:748, base:650, w:150, top:396};
-  const jx0 = J.x-J.w/2, jx1 = J.x+J.w/2;
-  shadow(J.x+78, J.base+14, 118, 20, .26);
-  // lavender stems rising from the jar
-  const tops = [[610,300],[664,262],[716,236],[772,246],[828,284],[876,346],[690,310],[802,262]];
-  const bases = [-26,-16,-6,6,16,26,-12,12];
-  tops.forEach((t,i)=>{
-    const b = [J.x+bases[i], J.base-8];
-    sprig(b,[lerp(b[0],t[0],.35)+R(-26,26), lerp(b[1],t[1],.55)], [t[0],t[1]], {head:.36, hw:14});
   });
-  // glass + water laid OVER the stems so the lower stems look submerged
-  const jar = c=>{ const r=18; c.moveTo(jx0+8,J.top); c.lineTo(jx1-8,J.top); c.lineTo(jx1,J.base-r); c.quadraticCurveTo(jx1,J.base,jx1-r,J.base);
-    c.lineTo(jx0+r,J.base); c.quadraticCurveTo(jx0,J.base,jx0,J.base-r); c.closePath(); };
-  const waterTop = 462;
-  field([jx0,J.top,jx1,J.base], jar, ()=>hsl(R(190,215),R(30,50),R(88,96),.2), {n:600, len:[14,34], wid:[6,12], ang:1.5, aj:.3});   // glass tint
-  field([jx0,waterTop,jx1,J.base], jar, (x,y)=>{
-    const r = rnd();
-    if (r < .26) return hsl(R(268,292),R(32,54),R(56,72),.42);  // lavender stems refracted through water
-    if (r < .34) return hsl(R(44,54),R(60,86),R(86,95),.4);
-    return hsl(R(188,212),R(34,54),lerp(80,62,(y-waterTop)/(J.base-waterTop)),.5);
-  }, {n:2000, len:[12,28], wid:[4,9], ang:1.57, aj:.35});
-  // refracted, slightly shifted stems under the water
-  field([jx0,waterTop,jx1,J.base-6], jar, ()=>hsl(R(85,120),R(20,34),R(46,62),.5), {n:260, len:[18,40], wid:[2.5,5], ang:1.57, aj:.1});
-  // water surface line
-  field([jx0+4,waterTop-3,jx1-4,waterTop+5], jar, ()=>hsl(R(190,214),R(30,50),R(90,97),.8), {n:130, len:[14,26], wid:[2,4], ang:0, aj:.05});
-  // glass highlights + rim
-  field([jx0+8,J.top+8,jx0+22,J.base-14], jar, ()=>hsl(R(40,60),R(30,70),R(94,100),.55), {n:220, len:[16,44], wid:[2.5,5], ang:1.57, aj:.05});
-  field([jx1-18,J.top+30,jx1-8,J.base-24], jar, ()=>hsl(R(200,220),R(20,40),R(92,98),.35), {n:90, len:[14,34], wid:[2,4], ang:1.57, aj:.05});
-  field([jx0-3,J.top-5,jx1+3,J.top+6], null, ()=>hsl(R(190,215),R(20,40),R(86,96),.75), {n:230, len:[12,24], wid:[2.5,5], ang:0, aj:.04});
-  field([jx0+4,J.base-8,jx1-4,J.base+4], jar, ()=>hsl(R(200,222),R(24,44),R(70,82),.6), {n:150, len:[14,28], wid:[3,6], ang:0, aj:.04}); // thick glass base
+  for(const y of [590,520,450,380,316]) box(940,y,1100,y+10,[28,42,40],{});
+  box(940,316,952,GY,wood,{ang:vert}); box(1088,316,1100,GY,wood,{ang:vert}); box(932,304,1108,318,[26,42,26],{});
+  /* ---- FIREPLACE ---- */
+  box(1150,96,1330,GY,[36,24,80],{ang:vert,coarse:true,ea:.35});                                // chimney breast
+  box(1130,436,1350,452,[26,36,34],{});                                                         // mantel
+  box(1195,500,1285,GY,[14,40,9],{edge:false,j:.5,ang:vert});                                   // firebox
+  box(1185,490,1195,GY,[8,30,44],{ang:vert}); box(1285,490,1295,GY,[8,30,44],{ang:vert}); box(1185,488,1295,502,[8,30,44],{});
+  box(1140,596,1340,614,[220,8,56],{});                                                         // hearth
+  for(const [x,y] of [[1208,584],[1236,590],[1262,586]]) facePoly([[x,y],[x+34,y-6],[x+36,y+6],[x+2,y+12]],[22,40,18],{edge:true,dens:3,ea:.4});   // logs
+  box(1205,290,1275,392,[28,40,34],{});                                                         // framed swirl painting
+  const sx=1240, sy=341;
+  paintPoly(rect(1211,296,1269,386),(x,y)=>{const d=Math.hypot(x-sx,y-sy); return d<10?cj(50,80,70,.97):cj(R(215,235),55,lerp(28,52,Math.sin(d*.45)*.5+.5),.97);},(x,y)=>Math.atan2(y-sy,x-sx)+Math.PI/2+Math.sin(Math.hypot(x-sx,y-sy)*.3),{dens:3,len:[3,6],wid:[1,1.6],aj:.1});
+  box(1160,408,1168,436,[44,30,92],{edge:false}); box(1178,414,1186,436,[44,30,92],{edge:false});   // candles
+  box(1300,418,1318,436,[196,28,78],{edge:false}); bunch(1309,420,20,32,6,4.5,-1);
+  /* ---- ANALOGUE CLOCK in the blank space above the painting (hands are drawn live) ---- */
+  const [clx,cly,clr]=CLOCK;
+  facePoly(ellPts(clx,cly,clr+8,clr+8,30),[28,40,34],{ea:.5,dens:3});                 // wooden rim
+  facePoly(ellPts(clx,cly,clr,clr,30),[44,30,92],{ea:.35,dens:3});                    // cream face
+  for(let i=0;i<12;i++){ const a=i/12*Math.PI*2-Math.PI/2, big=i%3===0, r0=clr-(big?12:8), r1=clr-3;
+    stk(clx+Math.cos(a)*(r0+r1)/2,cly+Math.sin(a)*(r0+r1)/2,r1-r0,big?2.4:1.4,a,cj(260,30,24,.9,.4),0); }
+  G.save(); G.font='bold 12px ui-monospace, SFMono-Regular, Menlo, Consolas, "Courier New", monospace'; G.textAlign='center'; G.textBaseline='middle'; G.fillStyle='hsla(260,30,22,.92)';
+  for(const [tx,deg] of [['12',-90],['3',0],['6',90],['9',180]]){ const a=deg*Math.PI/180, r=clr-19; G.fillText(tx,clx+Math.cos(a)*r+R(-.5,.5),cly+Math.sin(a)*r+R(-.5,.5)); }
+  G.restore();
+}
 
-  /* ---- 7. lavender BUNDLE tied with ribbon, lying on the desk (left) ---- */
-  const T = [470,696];                                           // the tie point
-  shadow(T[0]+10, T[1]+22, 230, 18, .26);
-  for (let j=0;j<7;j++){
-    const o = (j-3)*7;
-    sprig([640,T[1]+o*.8+R(-3,3)], [T[0]+40,T[1]+o*.4], [236+R(-12,16),T[1]+o*1.6-4+R(-6,6)], {head:.34, hw:15, sw:3.4});
+function paintFront(v){
+  use(FRONT[v]);
+  const pot=(x,base,w,h,plantH,count,hw)=>{
+    for(let i=0;i<count;i++){ const u=LR(-1,1); lav(x+u*w*.3,base-h,x+u*w*.85+LR(-14,14),base-h-plantH*LR(.7,1.05),hw,{head:.42}); }
+    facePoly([[x-w*.42,base],[x+w*.42,base],[x+w*.5,base-h],[x-w*.5,base-h]],[16,52,50],{coarse:true,len:[6,10]});
+    facePoly(rect(x-w*.56,base-h-12,x+w*.56,base-h),[18,54,56],{});
+  };
+  pot(34,H+6,84,62,120,26,8);
+  pot(1572,H+4,84,62,116,26,8);
+  pot(1370,H+6,56,40,70,12,6);
+}
+
+/* ---------- outdoors: lavender rows to the horizon, hills, cypress ---------- */
+function cypress(x,by,h,w){
+  for(let i=0;i<Math.round(h*w*.5);i++){ const t=R(0,1), half=w*.5*Math.sin(Math.PI*Math.pow(t,.65))*.95+.5, y=by-t*h, xx=x+R(-1,1)*half+Math.sin(t*5)*w*.08;
+    stk(xx,y,R(5,9),R(1.4,2.5),-Math.PI/2+Math.sin(t*6+xx*.2)*.5+R(-.3,.3),cj(R(140,170),R(28,44),R(14,32)+t*6,.95),.35); }
+}
+function paintOut(v){
+  for(const [L,box_,vx] of [[OUTW[v],OB_WIN,230],[OUTD[v],OB_DOOR,1485]]){
+    use(L); const [x0,y0,x1,y1]=box_;
+    const hillTop=x=>HZ-18-10*Math.sin(x*.045+1)-6*Math.sin(x*.11);
+    const hills=[]; for(let x=x0;x<=x1;x+=4) hills.push([x,hillTop(x)]); hills.push([x1,HZ+3],[x0,HZ+3]);
+    paintPoly(hills,(x,y)=>cj(R(240,268),26,lerp(62,48,(y-hillTop(x))/30),.97),x=>Math.sin(x*.06)*.3,{dens:2.8,len:[5,10],wid:[1.4,2.4]});
+    const ground=rect(x0,HZ,x1,y1);
+    paintPoly(ground,(x,y)=>{ const d=y-HZ, u=(x-vx)/(d+3), row=Math.floor(u*1.7+200), haze=clamp(1-d/90,0,1);
+      return row%2?cj(R(262,288),clamp(56-haze*24,0,100),clamp(44+haze*20,0,100),.97):cj(R(72,100),clamp(34-haze*14,0,100),clamp(54+haze*14,0,100),.9); },
+      (x,y)=>Math.atan2(HZ-y,vx-x),{dens:3,len:[5,10],wid:[1.4,2.4],aj:.15,cv:.1});
+    paintPoly(ground,()=>cj(R(268,290),58,R(55,72),.7),(x,y)=>Math.atan2(HZ-y,vx-x),{dens:.35,len:[4,8],wid:[1.4,2.2],aj:.1});
   }
-  // trailing tails first (they sit under the bow)
-  const rb = {h:344,s:36,l:78,ph:0.4};
-  ribbon([T[0],T[1]+4],[T[0]-80,T[1]+60],[T[0]-210,T[1]+78],17,14,{...rb,ph:1.2});        // tail toward the front-left
-  ribbon([T[0],T[1]+4],[T[0]+120,T[1]+90],[T[0]+330,T[1]+86],17,13,{...rb,ph:2.6});       // long tail sweeping right
-  // bow loops
-  ribbonLoop(T[0]-42,T[1]-22,40,19,-.45,15,{...rb,ph:.2});
-  ribbonLoop(T[0]+44,T[1]-22,40,19, .45,15,{...rb,ph:3.4});
-  // band wrapped around the stems, then the knot
-  ribbon([T[0]-4,T[1]-36],[T[0]+4,T[1]],[T[0]-2,T[1]+34],15,15,{...rb,l:72,ph:5});
-  field([T[0]-14,T[1]-14,T[0]+14,T[1]+14], ell(T[0],T[1]-1,13,11), ()=>hsl(R(338,350),R(34,46),R(68,80),.95), {n:90, len:[6,12], wid:[3,6], ang:.8, aj:1});
+  use(OUTD[v]); cypress(1450,HZ+34,120,30); cypress(1522,HZ+14,78,20);
+  use(OUTW[v]); cypress(272,HZ+16,64,18);
+}
+function paintSkyTex(v){
+  const swirl=(x,y)=>Math.sin(x*.03+y*.02)*1.4+Math.cos(y*.045-x*.018)*1.1;
+  for(const L of [SKYW[v],SKYD[v]]){ use(L);
+    for(let i=0;i<1700;i++){ const x=L.ox+R(0,L.w), y=L.oy+R(0,L.h);
+      stk(x,y,R(8,18),R(1.5,2.8),swirl(x,y),rnd()<.5?'rgba(255,255,255,.12)':'rgba(10,14,50,.11)',.45); } }
+}
+function paintGrain(){
+  use(GRAIN); rnd=mulberry32(99);
+  for(let i=0;i<34000;i++){ const l=rnd()<.5; stk(R(0,W),R(0,H),R(1.5,4),R(.8,1.6),R(0,6.3),l?'rgba(255,244,220,.05)':'rgba(30,20,60,.05)'); }
+  const g=GRAIN.g.createRadialGradient(W/2,H*.5,H*.3,W/2,H*.5,W*.62);
+  g.addColorStop(0,'rgba(40,24,70,0)'); g.addColorStop(1,'rgba(40,24,70,.30)');
+  GRAIN.g.fillStyle=g; GRAIN.g.fillRect(0,0,W,H);
+}
 
-  /* ---- 8. one loose sprig in the foreground ---- */
-  shadow(1010,780,90,8,.2);
-  sprig([1120,768],[1040,752],[900,756],{head:.34,hw:12});
-
-  /* ---- 9. finishing the painting: light, haze, grain ---- */
-  // bloom from the window (additive glow, like glare on a wet canvas)
-  ctx.save();
-  ctx.globalCompositeOperation = 'lighter';
-  let g = ctx.createRadialGradient(glow[0],glow[1],10,glow[0],glow[1],560);
-  g.addColorStop(0,'rgba(255,238,200,.05)'); g.addColorStop(1,'rgba(255,238,200,0)');
-  ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
-  ctx.restore();
-  // soft vignette
-  g = ctx.createRadialGradient(W*.5,H*.5,H*.35,W*.5,H*.5,H*.95);
-  g.addColorStop(0,'rgba(60,40,80,0)'); g.addColorStop(1,'rgba(60,40,80,.30)');
-  ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
-  // canvas grain: thousands of tiny light and dark flecks
-  for (let i=0;i<26000;i++){
-    const light = rnd()<.5;
-    dab(R(0,W),R(0,H),R(1.5,4),R(1,2.5),R(0,6.3), light?hsl(40,60,95,.07):hsl(270,30,15,.06));
+const tick=()=>new Promise(r=>requestAnimationFrame(r));
+let avail=0;
+const setProg=p=>{ document.querySelector('#bar i').style.transform='scaleX('+p+')'; };
+async function paintAll(){
+  setProg(.08); await tick(); paintGrain(); setProg(.25); await tick();
+  for(let v=0;v<N;v++){
+    rnd=mulberry32(1000+v*977); lr=mulberry32(5);        // brush changes per variant, layout stays identical
+    paintBack(v);  if(!v) setProg(.5); await tick();
+    paintMid(v);   if(!v) setProg(.75); await tick();
+    paintFront(v); paintOut(v); paintSkyTex(v); if(!v) setProg(1); await tick();
+    avail=v+1;
+    if(!v) setTimeout(()=>{ const L=document.getElementById('loading'); L.classList.add('done'); setTimeout(()=>L.style.display='none',1800); },800);
   }
 }
 
-/* ---------- buttons ---------- */
-let seed = 7;
-const label = document.getElementById('seedLabel');
-function go(s){ seed = s; label.textContent = s; paint(s); }
-document.getElementById('again').onclick = ()=>go(Math.floor(Math.random()*9999));
-document.getElementById('save').onclick = ()=>{ const a=document.createElement('a'); a.download=`lavender-workshop-${seed}.png`; a.href=cv.toDataURL('image/png'); a.click(); };
-go(7);
+/* =====================================================================
+   LIGHT: runs every frame
+   ===================================================================== */
+const STARS=[]; { const r=mulberry32(5); for(let i=0;i<46;i++){ const door=i%2; STARS.push({x:door?lerp(1412,1558,r()):lerp(132,328,r()),y:lerp(base_y(door),HZ-6,r()),ph:r()*6.3,sz:.6+r()*1.4}); } }
+function base_y(door){ return door?310:276; }
+const FIRE=Array.from({length:30},(_,i)=>({u:(i/29)*2-1,h:.45+((i*7)%10)/18,sp:3+((i*13)%7)*.9,ph:i*1.7}));
+const MOTES=Array.from({length:50},(_,i)=>({x:(i*97%W),y:(i*53%330)+300,sp:.2+((i*7)%5)*.08,ph:i}));
+const FIRE_OPEN=[1195,500,1285,GY], LAMP=[852,TY_LAMP()];
+function TY_LAMP(){ return 452; }
+
+function bodyPos(u){ return [lerp(90,1520,u), HZ+20-Math.sin(Math.PI*u)*240]; }
+function sunMoon(t){
+  const u=(t-6)/12, sun=(u>=0&&u<=1)?bodyPos(u):null;
+  const v=t>=18?(t-18)/12:(t+6)/12, moon=(v>=0&&v<=1)?bodyPos(v):null;
+  return {sun,moon,u,v,elev:(u>=0&&u<=1)?Math.sin(Math.PI*u):0};
+}
+function tint(L,c,dx=0,dy=0){
+  if (c[3]<.01){ M.drawImage(L.c,L.ox+dx,L.oy+dy,L.w,L.h); return; }
+  const t=TMP.g; t.save(); t.setTransform(SC,0,0,SC,0,0); t.globalCompositeOperation='source-over'; t.clearRect(0,0,L.w,L.h); t.drawImage(L.c,0,0,L.w,L.h);
+  t.globalCompositeOperation='source-atop'; t.fillStyle=rgba(c,c[3]); t.fillRect(0,0,L.w,L.h); t.restore();
+  M.drawImage(TMP.c,0,0,L.w*SC,L.h*SC,L.ox+dx,L.oy+dy,L.w,L.h);
+}
+function glow(x,y,r,col,a){ const g=M.createRadialGradient(x,y,0,x,y,r); g.addColorStop(0,rgba(col,a)); g.addColorStop(1,rgba(col,0)); M.fillStyle=g; M.fillRect(x-r,y-r,r*2,r*2); }
+function hull(pts){ const p=pts.slice().sort((a,b)=>a[0]-b[0]||a[1]-b[1]), cr=(o,a,b)=>(a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]), lo=[],up=[];
+  for(const q of p){ while(lo.length>1&&cr(lo[lo.length-2],lo[lo.length-1],q)<=0) lo.pop(); lo.push(q); }
+  for(let i=p.length-1;i>=0;i--){ const q=p[i]; while(up.length>1&&cr(up[up.length-2],up[up.length-1],q)<=0) up.pop(); up.push(q); }
+  lo.pop(); up.pop(); return lo.concat(up); }
+
+function drawSkyBodies(S,t,sm,vi){
+  const g=M.createLinearGradient(0,0,0,HZ); g.addColorStop(0,rgba(S.top)); g.addColorStop(.55,rgba(S.mid)); g.addColorStop(1,rgba(S.hor));
+  M.fillStyle=g; M.fillRect(0,0,W,HZ); M.fillStyle=rgba(S.hor); M.fillRect(0,HZ,W,H-HZ);
+  M.drawImage(SKYW[vi].c,SKYW[vi].ox,SKYW[vi].oy,SKYW[vi].w,SKYW[vi].h); M.drawImage(SKYD[vi].c,SKYD[vi].ox,SKYD[vi].oy,SKYD[vi].w,SKYD[vi].h);
+  if (S.stars>.02) for(const s of STARS){
+    const a=S.stars*(.6+.4*Math.sin(t*1.4+s.ph));
+    M.fillStyle=`rgba(255,240,170,${a})`; M.beginPath(); M.arc(s.x,s.y,s.sz,0,6.3); M.fill();
+    M.strokeStyle=`rgba(255,235,150,${a*.35})`; M.lineWidth=.8;
+    for(let k=0;k<8;k++){ const an=k/8*6.28+s.ph; M.beginPath(); M.moveTo(s.x+Math.cos(an)*s.sz*2,s.y+Math.sin(an)*s.sz*2); M.lineTo(s.x+Math.cos(an)*s.sz*4.5,s.y+Math.sin(an)*s.sz*4.5); M.stroke(); }
+  }
+  const body=(p,col,rad,a)=>{ if(!p) return; glow(p[0],p[1],rad*4,col,.5*a);
+    M.fillStyle=rgba(col,.95*a); M.beginPath(); M.arc(p[0],p[1],rad,0,6.3); M.fill();
+    M.strokeStyle=rgba(col,.55*a); M.lineWidth=1.4;
+    for(let k=0;k<28;k++){ const an=k/28*6.28; M.beginPath(); M.moveTo(p[0]+Math.cos(an)*rad*1.25,p[1]+Math.sin(an)*rad*1.25); M.lineTo(p[0]+Math.cos(an)*rad*1.7,p[1]+Math.sin(an)*rad*1.7); M.stroke(); } };
+  const warm=1-clamp(sm.elev*2,0,1);
+  body(sm.sun,[255,lerp(244,150,warm),lerp(214,70,warm)],17,1); body(sm.moon,[236,240,255],13,clamp(S.stars+.2,0,1));
+}
+
+/* a sunbeam entering through an opening and landing as a pool of light on the floor */
+function shaft(hole,s,run,I,col){
+  if (I<.03) return;
+  const [x0,y0,x1,y1]=hole, Yf=636, dT=s*run*(Yf-y0), dB=s*run*(Yf-y1);
+  M.fillStyle=rgba(col,.06*I); pathPoly(M,hull([[x0,y0],[x1,y0],[x0,y1],[x1,y1],[x0+dT,Yf],[x1+dT,Yf],[x0+dB,Yf],[x1+dB,Yf]])); M.fill();
+  const a=Math.min(x0+dB,x0+dT), b=Math.max(x1+dB,x1+dT), cx=(a+b)/2, r=(b-a)/2;
+  M.save(); M.translate(cx,Yf); M.scale(1,.2); const g=M.createRadialGradient(0,0,0,0,0,r); g.addColorStop(0,rgba(col,.5*I)); g.addColorStop(1,rgba(col,0)); M.fillStyle=g; M.beginPath(); M.arc(0,0,r,0,6.3); M.fill(); M.restore();
+}
+
+function drawLightsBehind(S,t,sm){
+  M.save(); M.globalCompositeOperation='lighter';
+  const sunI=clamp(sm.elev*1.5,0,1), warm=1-clamp(sm.elev*2,0,1), sc=[255,lerp(240,170,warm),lerp(200,100,warm)], run=lerp(1.5,.45,Math.sin(Math.PI*clamp(sm.u,0,1)));
+  const wI=sunI*clamp((.62-sm.u)/.24,0,1), dI=sunI*clamp((sm.u-.38)/.24,0,1);
+  shaft(WIN,1,run,wI,sc); shaft(DOOR,-1,run,dI,sc);
+  const moonI=S.stars>.5?.32*S.stars:0, mc=[150,170,255];
+  shaft(WIN,1,1.2,moonI*clamp((.6-sm.v)/.2,0,1),mc); shaft(DOOR,-1,1.2,moonI*clamp((sm.v-.4)/.2,0,1),mc);
+  glow(230,343,170,[S.hor[0],S.hor[1],S.hor[2]],clamp(wI*.2+.05,0,.25)*(S.stars>.5?0:1));
+  glow(1485,430,170,[S.hor[0],S.hor[1],S.hor[2]],clamp(dI*.2+.05,0,.25)*(S.stars>.5?0:1));
+  M.restore();
+  return {sunI};
+}
+function drawLightsFront(S,t,sm,sunI){
+  M.save(); M.globalCompositeOperation='lighter';
+  const [fx0,fy0,fx1,fy1]=FIRE_OPEN, fx=(fx0+fx1)/2, fw=fx1-fx0, fh=fy1-fy0;
+  // the fire re-draws itself whenever the brushwork flips (same seed within one step), so it moves WITH the paint
+  const step=avail>=2?fireStep:Math.floor(t*9), fr=mulberry32(step*7919+13);
+  M.save(); M.beginPath(); M.rect(fx0,fy0,fw,fh); M.clip(); M.lineCap='round';
+  for(let f=0;f<15;f++){
+    const u=-1+2*(f+fr()*.7)/15, h=fh*(.3+fr()*.45)*(1-Math.abs(u)*.35), lean=(fr()-.5)*fw*.16, x0=fx+u*fw*.34;
+    for(let k=0;k<6;k++){
+      const tt=k/5, x=x0+lean*tt*tt, y=fy1-5-h*tt, col=tt<.34?'255,95,35':tt<.7?'255,165,55':'255,222,125';
+      M.strokeStyle=`rgba(${col},${(.3-tt*.1).toFixed(2)})`; M.lineWidth=Math.max(1.2,fw*.055*(1-tt*.55));
+      const a=-Math.PI/2+lean*tt*.02+(fr()-.5)*.5, l=h/5*1.35;
+      M.beginPath(); M.moveTo(x-Math.cos(a)*l*.5,y-Math.sin(a)*l*.5); M.lineTo(x+Math.cos(a)*l*.5,y+Math.sin(a)*l*.5); M.stroke();
+    }
+  }
+  M.restore();
+  const dark=1-clamp(sm.elev*1.8,0,1), fireI=(.16+.4*dark)*(.88+.12*fr());
+  glow(fx,fy1-fh*.3,300,[255,140,50],fireI*.38); glow(fx,fy1-fh*.3,110,[255,190,90],fireI*.3);
+  const lampI=S.lamp*(.9+.1*Math.sin(t*7.3));
+  if (lampI>.02){ glow(LAMP[0],LAMP[1]-8,190,[255,190,100],lampI*.3); glow(LAMP[0],LAMP[1]-8,40,[255,220,150],lampI*.32);
+    M.fillStyle=`rgba(255,226,150,${.85*lampI})`; M.beginPath(); M.ellipse(LAMP[0],LAMP[1]-8,2,4+Math.sin(t*8)*.5,0,0,6.3); M.fill(); }
+  if (sunI>.1) for(const m of MOTES){ const x=(m.x+Math.sin(t*m.sp+m.ph)*14+t*m.sp*6)%W, y=m.y+Math.cos(t*m.sp*.8+m.ph)*10;
+    M.fillStyle=`rgba(255,240,200,${sunI*.3})`; M.beginPath(); M.arc(x,y,1,0,6.3); M.fill(); }
+  M.restore();
+}
+
+/* ---------- the brush "boil": which painting is showing, and tiny jitter ---------- */
+let cur=0, nextSwitch=0, off=[0,0], fireStep=0;
+function stepBoil(ts){
+  if (avail<2 || ts<nextSwitch) return;
+  fireStep++;
+  nextSwitch=ts+170+Math.random()*90;                                  // ~4–5 times a second, gentler
+  cur=(cur+1+Math.floor(Math.random()*(avail-1)))%avail;
+  off=[Math.random()*.5-.25,Math.random()*.5-.25];
+}
+
+/* =====================================================================
+   THE CROCODILE (your sprite sheet) + THE GIFTS
+   ---------------------------------------------------------------------
+   • The crocodile is drawn from your frames, untouched, so he keeps his own soft style.
+     (assets/croc-sheet.webp is sliced into frames at startup by assets/croc-slicer.js)
+   • He lives by the real clock: sleeps in the bed, potters at the table, tidies the shelf,
+     warms up by the fire, watches the sunset from the door.
+   • Tap him to pet him. Tap the gift box (when there is one) to open it.
+   ===================================================================== */
+const BOX_L=makeLayer(-40,-78,80,80);
+function withBrush(L,seed,fn){ const sG=G,sLB=LB,sr=rnd,sl=lr; use(L); rnd=mulberry32(seed); lr=mulberry32(5); try{ fn(); } finally { G=sG; LB=sLB; rnd=sr; lr=sl; } }
+const OUTLINE=[175,36,24];
+const ell=(cx,cy,rx,ry,col,o={})=>facePoly(ellPts(cx,cy,rx,ry,18),col,{dens:2.5,len:[5,9],wid:[1.5,2.6],ea:.55,ew:1.3,edgeCol:OUTLINE,...o});
+function drawBox(){
+  G.clearRect(-40,-78,80,80);
+  facePoly(rect(-24,-34,24,0),[275,40,70],{dens:3,len:[4,7],wid:[1.4,2.2],edgeCol:[265,36,26]});
+  facePoly(rect(-28,-45,28,-33),[275,44,80],{dens:3,len:[4,7],wid:[1.4,2.2],edgeCol:[265,36,26]});
+  facePoly(rect(-4.5,-45,4.5,0),[345,62,78],{edge:false,ang:vert,dens:3,len:[4,7],wid:[1.4,2.2]});
+  ell(-11,-54,11,8,[345,62,78],{dens:3,len:[3,6],wid:[1.2,2]}); ell(11,-54,11,8,[345,62,78],{dens:3,len:[3,6],wid:[1.2,2]}); ell(0,-50,5,5,[345,66,68],{dens:3,len:[3,5],wid:[1.2,1.8]});
+}
+
+/* ---------- gifts ---------- */
+/* To add a gift: save your painting as a PNG in the "gifts" folder, then add a line here.
+   spot = where it hangs on the wall after it's opened: [x, y, width, height] — leave it null to use the next free slot. */
+const GIFTS=window.GIFT_LIST;
+const SLOTS=[[380,296,92,80],[492,296,92,80],[604,296,92,80],[716,296,92,80]];
+const BOX={x:648,y:486};
+let seen=new Set(); try{ if(new URLSearchParams(location.search).has('resetgifts')) localStorage.removeItem('croc_seen_gifts'); seen=new Set(JSON.parse(localStorage.getItem('croc_seen_gifts')||'[]')); }catch(e){}
+const saveSeen=()=>{ try{ localStorage.setItem('croc_seen_gifts',JSON.stringify([...seen])); }catch(e){} };
+function placeholderGift(){
+  const L=makeLayer(0,0,200,170);
+  withBrush(L,321,()=>{
+    paintPoly(rect(0,0,200,170),(x,y)=>y<95?cj(R(205,230),45,lerp(82,70,y/95),.97):(Math.floor((x-100)/(y-92+3)*1.7+200)%2?cj(R(262,288),52,50,.97):cj(R(72,100),30,58,.97)),(x,y)=>y<95?Math.sin(x*.05)*.4:Math.atan2(92-y,100-x),{dens:3.2,len:[6,11],wid:[1.6,2.8]});
+    for(let i=0;i<9;i++) lav(40+i*14,170,36+i*14+LR(-14,14),70+LR(0,30),9,{head:.4});
+  });
+  return L.c.toDataURL();
+}
+GIFTS.forEach((g,i)=>{ g.img=new Image(); g.ready=false; g.img.onload=()=>{g.ready=true;}; g.img.onerror=()=>{ g.img.src=placeholderGift(); };
+  if(g.image) g.img.src=g.image; else g.img.src=placeholderGift(); g.slot=g.spot||SLOTS[i%SLOTS.length]; });
+const pendingGift=()=>GIFTS.find(g=>!seen.has(g.id));
+const noticeEl=document.getElementById('notice'), giftEl=document.getElementById('gift'), giftImg=document.getElementById('giftImg');
+let overlayOpen=false, openedAt=0;
+function showNotice(txt,ms=7000){ noticeEl.textContent=txt; noticeEl.classList.add('show'); setTimeout(()=>noticeEl.classList.remove('show'),ms); }
+function openGift(g){
+  overlayOpen=true; openedAt=Date.now(); giftImg.src=g.img.src; document.getElementById('giftTitle').textContent=g.title; document.getElementById('giftNote').textContent=g.note||'';
+  giftEl.classList.add('show'); seen.add(g.id); saveSeen();
+}
+document.getElementById('giftClose').onclick=()=>{ if(Date.now()-openedAt<500) return; giftEl.classList.remove('show'); overlayOpen=false; pet(3.5); };
+/* paintings you've been given, hanging flat on the wall (no shadow) */
+function drawGiftFrames(S){
+  for(const g of GIFTS){ if(!seen.has(g.id)||!g.ready) continue; const [x,y,w,h]=g.slot;
+    M.fillStyle='hsl(28,40,34)'; M.fillRect(x-6,y-6,w+12,h+12);
+    M.drawImage(g.img,x,y,w,h); M.fillStyle=rgba(S.room,S.room[3]); M.fillRect(x-6,y-6,w+12,h+12); }
+}
+
+/* ---------- the crocodile's frames ---------- */
+let CF=null, CS=1;
+if(window.sliceCrocSheet&&window.CROC_SHEET) sliceCrocSheet(window.CROC_SHEET).then(f=>{ CF=f; CS=124/f.__standH; }).catch(e=>console.error(e));
+
+/* ---------- where he goes ---------- */
+const BED_Y=508;
+const ST={
+  sleep:{x:262,y:626,dir:1,mode:'sleep'},
+  door :{x:1462,y:634,dir:1,mode:'idle'},
+  table:{x:700,y:634,dir:1,mode:'work',fid:1},
+  shelf:{x:1010,y:636,dir:1,mode:'sort',fid:1},
+  fire :{x:1105,y:642,dir:1,mode:'sit'},
+  pot1 :{x:150,y:652,dir:1,mode:'pickup',fid:1},
+  pot2 :{x:1330,y:656,dir:-1,mode:'pickup',fid:1},
+  gift :{x:700,y:634,dir:-1,mode:'excited'},
+};
+function scheduleFor(h){
+  if(h<6.4||h>=22.5) return 'sleep';
+  if(h<7.6) return 'door';
+  if(h<11)  return 'table';
+  if(h<12)  return 'pot1';
+  if(h<13.5)return 'shelf';
+  if(h<16.5)return 'table';
+  if(h<17)  return 'pot2';
+  if(h<18.8)return 'door';
+  if(h<21.5)return 'fire';
+  return 'shelf';
+}
+const C={x:262,y:626,dir:1,mode:'idle',walkT:0,station:null,goal:{x:262,y:626},onBed:false,hop:null,petT:0,surprise:0,fid:3,sc:1,sx:1,sy:1,hopY:0,bw:100,bh:124};
+const hearts=[];
+const R2=(a,b)=>a+Math.random()*(b-a);
+function pet(sec=3){
+  if(C.onBed&&C.petT<=0) C.surprise=.9;
+  C.petT=Math.max(C.petT,sec);
+  for(let i=0;i<5;i++) hearts.push({x:C.x+R2(-40,40),y:C.y-C.bh-6,vy:R2(24,44),life:1,sz:R2(6,10),ph:Math.random()*6});
+}
+function updateWorld(dt){
+  const h=Scene.hour, gw=pendingGift()&&!overlayOpen, now=performance.now()/1000;
+  const want=overlayOpen?C.station||'table':(gw?'gift':scheduleFor(h));
+  for(const k of hearts){ k.y-=k.vy*dt; k.life-=dt*.55; } while(hearts.length&&hearts[0].life<=0) hearts.shift();
+  C.hopY=0; C.sx=C.sy=1;
+  if(C.hop){ C.hop.t+=dt/C.hop.dur; const t=Math.min(1,C.hop.t); C.x=lerp(C.hop.x0,C.hop.x1,t); C.y=lerp(C.hop.y0,C.hop.y1,t)-Math.sin(Math.PI*t)*60; C.mode='hop';
+    if(t>=1){ C.hop=null; C.mode=C.onBed?'sleep':'idle'; } C.sc=1; return; }
+  if(C.surprise>0){ C.surprise-=dt; C.mode='surprise'; return; }
+  if(C.petT>0){ C.petT-=dt; C.mode=C.onBed?'sleepHappy':'happy'; if(!C.onBed){ C.hopY=-Math.abs(Math.sin(now*5))*4; } C.sx=1+.025*Math.sin(now*7); C.sy=1-.025*Math.sin(now*7); return; }
+  if(C.station!==want){ C.station=want; C.goal={x:ST[want].x,y:ST[want].y};
+    if(C.onBed){ C.hop={x0:C.x,y0:C.y,x1:C.x,y1:626,t:0,dur:1.4}; C.onBed=false; return; } }
+  const dx=C.goal.x-C.x, dy=C.goal.y-C.y, d=Math.hypot(dx,dy);
+  if(!C.onBed&&d>3){ const sp=85, k=Math.min(1,sp*dt/d); C.x+=dx*k; C.y+=dy*k; if(Math.abs(dx)>2) C.dir=dx>0?1:-1; C.mode='walk'; C.walkT+=dt*5; }
+  else { const s=ST[C.station]; C.dir=s.dir; C.mode=s.mode;
+    if(C.mode==='excited') C.hopY=-Math.abs(Math.sin(now*7))*9;
+    if(C.station==='sleep'&&!C.onBed){ C.hop={x0:C.x,y0:C.y,x1:C.x,y1:BED_Y,t:0,dur:1.5}; C.onBed=true; }
+    else if(s.fid){ C.fid-=dt; if(C.fid<=0){ C.fid=R2(5,9); C.goal={x:clamp(s.x+R2(-55,55),60,1520),y:clamp(s.y+R2(-8,8),580,684)}; } } }
+  C.sc=C.onBed?1:lerp(.82,1.12,clamp((C.y-575)/110,0,1));
+}
+
+/* ---------- picking the frame ---------- */
+const IDLE_SEQ=[0,0,2,0,3,0,0,1];                                   // frame 1 is the blink
+function crocPick(t){
+  if(!CF) return null;
+  let key='idle', idx=0, flip=C.dir<0;
+  switch(C.mode){
+    case 'walk': key=C.dir>0?'walkR':'walkL'; idx=Math.floor(C.walkT)%4; flip=false; break;
+    case 'work': key=['cut','tie','sort'][Math.floor(Scene.hour)%3]; idx=Math.floor(t*2.6)%4; break;
+    case 'sort': key='sort'; idx=Math.floor(t*2.4)%4; break;
+    case 'sit': key='sit'; idx=[0,1,2,1][Math.floor(t*1.2)%4]; break;
+    case 'sleep': case 'sleepHappy': key='sleep'; idx=Math.floor(t*1.3)%4; break;
+    case 'happy': case 'hop': key='happy'; idx=Math.floor(t*3.5)%4; break;
+    case 'excited': key='talk'; idx=Math.floor(t*5)%4; break;
+    case 'pickup': key='pickup'; idx=Math.floor(t*1.6)%4; break;
+    case 'surprise': key='hurt'; idx=1; break;
+    default: idx=IDLE_SEQ[Math.floor(t*2.4)%IDLE_SEQ.length];
+  }
+  const arr=CF[key]; if(!arr||!arr.length) return null;
+  return {fr:arr[idx%arr.length],flip};
+}
+
+/* ---------- drawing (called between the furniture and the foreground) ---------- */
+function tintedCanvas(cv,w,h,c){
+  if(c[3]<.01) return cv;
+  const t=TMP.g; t.save(); t.setTransform(SC,0,0,SC,0,0); t.globalCompositeOperation='source-over'; t.clearRect(0,0,w,h); t.drawImage(cv,0,0);
+  t.globalCompositeOperation='source-atop'; t.fillStyle=rgba(c,c[3]); t.fillRect(0,0,w,h); t.restore(); return TMP.c;
+}
+function tintedSprite(L,c){ return tintedCanvas(L.c,L.w,L.h,c); }
+function heart(g,x,y,s,a){ g.save(); g.translate(x,y); g.scale(s,s); g.beginPath(); g.moveTo(0,.9); g.bezierCurveTo(-1.2,.1,-.7,-.9,0,-.35); g.bezierCurveTo(.7,-.9,1.2,.1,0,.9);
+  g.fillStyle=`rgba(255,126,166,${a})`; g.fill(); g.lineWidth=.16; g.strokeStyle=`rgba(170,50,100,${a*.7})`; g.stroke(); g.restore(); }
+let boxStep=-1;
+function drawCharacters(g,hour,t,S){
+  const step=avail>=2?fireStep:Math.floor(t*9);
+  if(step!==boxStep){ boxStep=step; withBrush(BOX_L,step*104729+11,()=>drawBox()); }
+  // gift box on the table
+  if(pendingGift()&&!overlayOpen){
+    const by=BOX.y-1.5-Math.sin(t*2.6)*1.6;
+    g.save(); g.translate(BOX.x,by); g.drawImage(tintedSprite(BOX_L,S.room),0,0,BOX_L.w,BOX_L.h,BOX_L.ox,BOX_L.oy,BOX_L.w,BOX_L.h); g.restore();
+    g.save(); g.globalCompositeOperation='lighter';
+    for(let i=0;i<6;i++){ const a=.5+.5*Math.sin(t*3+i*1.9), x=BOX.x+Math.cos(i*1.05+t*.4)*(30+i*4), y=by-34+Math.sin(i*1.37+t*.5)*((30+i*4)*.7); g.strokeStyle=`rgba(255,236,170,${a*.9})`; g.lineWidth=1.6;
+      g.beginPath(); g.moveTo(x-5*a,y); g.lineTo(x+5*a,y); g.moveTo(x,y-5*a); g.lineTo(x,y+5*a); g.stroke(); }
+    g.restore();
+  }
+  // the crocodile
+  const p=crocPick(t); if(!p) return;
+  const fr=p.fr, s=CS*C.sc;
+  if(!C.onBed&&!C.hop){ g.fillStyle='rgba(30,18,50,.2)'; g.beginPath(); g.ellipse(C.x,C.y+2,Math.max(40,fr.bodyW*.42)*s,7*s,0,0,6.3); g.fill(); }
+  g.save(); g.translate(C.x,C.y+C.hopY); g.scale((p.flip?-1:1)*s*C.sx,s*C.sy);
+  g.drawImage(tintedCanvas(fr.cv,fr.w,fr.h,S.room),0,0,fr.w,fr.h,-fr.ax,-fr.ay,fr.w,fr.h); g.restore();
+  C.bw=fr.bodyW*s; C.bh=fr.bodyH*s;
+  for(const k of hearts) heart(g,k.x+Math.sin(t*3+k.ph)*6,k.y,k.sz,clamp(k.life,0,1));
+}
+
+/* ---------- touch / mouse ---------- */
+function toLogical(e){ const r=main.getBoundingClientRect(), s=Math.max(r.width/W,r.height/H), ox=r.left+(r.width-W*s)/2, oy=r.top+(r.height-H*s)/2; return [(e.clientX-ox)/s,(e.clientY-oy)/s]; }
+const hitBox=([x,y])=>pendingGift()&&!overlayOpen&&Math.abs(x-BOX.x)<36&&y>BOX.y-80&&y<BOX.y+6;
+const hitCroc=([x,y])=>Math.pow((x-C.x)/(C.bw*.6),2)+Math.pow((y-(C.y-C.bh*.5))/(C.bh*.6),2)<=1;
+main.addEventListener('click',e=>{ if(overlayOpen) return; const p=toLogical(e); if(hitBox(p)){ openGift(pendingGift()); return; } if(hitCroc(p)) pet(3); });
+main.addEventListener('pointermove',e=>{ const p=toLogical(e); main.style.cursor=(hitBox(p)||hitCroc(p))?'pointer':'default'; });
+if(pendingGift()) setTimeout(()=>showNotice('A gift has arrived 🎁  look on the table'),2500);
+
+/* ---------- the analogue clock above the fireplace (face is painted; hands move with real time) ---------- */
+function drawClockHands(g,hour,t,S){
+  const [cx,cy,cr]=CLOCK, sec=(hour*3600)%60, min=(hour*60)%60, hr=hour%12;
+  const aS=sec/60*Math.PI*2-Math.PI/2, aM=min/60*Math.PI*2-Math.PI/2, aH=hr/12*Math.PI*2-Math.PI/2;
+  const jit=(fireStep%3-1)*.35;                                      // hands shiver slightly with the brushwork
+  const hand=(a,len,w,col)=>{ g.strokeStyle=col; g.lineWidth=w; g.lineCap='round'; g.beginPath(); g.moveTo(cx-Math.cos(a)*5,cy-Math.sin(a)*5); g.lineTo(cx+Math.cos(a)*len+jit,cy+Math.sin(a)*len+jit*.6); g.stroke(); };
+  const dim=1-S.room[3]*.5;
+  hand(aH,cr*.5,3.2,`hsla(255,35,${22*dim},.95)`); hand(aM,cr*.76,2.4,`hsla(255,35,${22*dim},.95)`); hand(aS,cr*.82,1,'hsla(345,60,42,.9)');
+  g.fillStyle='hsla(345,60,42,.95)'; g.beginPath(); g.arc(cx,cy,2.4,0,6.3); g.fill();
+}
+
+
+const Scene={ W,H,floorTop:FLOOR_TOP,walkMinY:WALK_MIN_Y,walkMaxY:WALK_MAX_Y,groundY:GY,
+  hour:7,live:true,playing:false,dayLength:120,drawAvatar:drawCharacters,
+  setHour(h){ Scene.hour=h; },
+  doorX:(DOOR[0]+DOOR[2])/2, windowX:(WIN[0]+WIN[2])/2 };
+window.Scene=Scene;
+
+function render(ts){
+  if (avail<1) return;
+  stepBoil(ts); const t=ts/1000, hour=Scene.hour;
+  const S=sampleDay(hour), sm=sunMoon(hour), n=avail;
+  const vB=cur%n, vM=(cur+1)%n, vO=(cur+2)%n, vF=(cur+3)%n;
+  M.globalCompositeOperation='source-over';
+  drawSkyBodies(S,t,sm,vM);
+  tint(OUTW[vO],S.out); tint(OUTD[vO],S.out);
+  tint(BACK[vB],S.room,off[0],off[1]);
+  const {sunI}=drawLightsBehind(S,t,sm);
+  drawGiftFrames(S);                                                  // paintings you've been given, hanging on the wall
+  tint(MID[vM],S.room,-off[0],off[1]);
+  drawClockHands(M,hour,t,S);
+  Scene.drawAvatar(M,hour,t,S);                                      // the crocodile (+ gift box), between furniture and foreground
+  drawLightsFront(S,t,sm,sunI);
+  tint(FRONT[vF],S.room,off[0],-off[1]);
+  M.drawImage(GRAIN.c,0,0,W,H);
+}
+
+/* =====================================================================
+   CLOCK + CONTROLS
+   ===================================================================== */
+const slider=document.getElementById('slider'), clock=document.getElementById('clock'), phase=document.getElementById('phase'), playBtn=document.getElementById('play');
+const phaseName=h=>h<5?'Deep night':h<6.6?'Dawn':h<11?'Morning':h<15?'Midday':h<17.5?'Afternoon':h<19.5?'Golden hour':h<21?'Dusk':'Night';
+function hud(){ const h=Scene.hour, hh=Math.floor(h), mm=Math.floor((h-hh)*60); clock.textContent=String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0'); phase.textContent=phaseName(h); }
+slider.oninput=()=>{ Scene.hour=parseFloat(slider.value); Scene.live=false; Scene.playing=false; playBtn.textContent='▶'; };
+playBtn.onclick=()=>{ Scene.playing=!Scene.playing; playBtn.textContent=Scene.playing?'❚❚':'▶'; };
+let last=performance.now();
+function frame(ts){
+  const dt=Math.min(.1,(ts-last)/1000); last=ts;
+  if (Scene.live){ const d=new Date(); Scene.hour=d.getHours()+d.getMinutes()/60+d.getSeconds()/3600+d.getMilliseconds()/3.6e6; }   // the day follows the real day
+  else if (Scene.playing){ Scene.hour=(Scene.hour+dt*24/Scene.dayLength)%24; slider.value=Scene.hour; }
+  updateWorld(dt); hud(); render(ts);
+  requestAnimationFrame(frame);
+}
+if(location.hash==='#debug'){ document.body.classList.add('debug'); Scene.live=false; Scene.playing=true; playBtn.textContent='❚❚'; }   // open game.html#debug to scrub time
+requestAnimationFrame(frame);
+paintAll();
+window.__setHour=h=>{Scene.live=false;Scene.hour=h;slider.value=h;Scene.playing=false;playBtn.textContent='▶';};
 </script>
 </body>
 </html>

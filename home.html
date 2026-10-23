@@ -23,7 +23,7 @@
 <canvas id="bg"></canvas>
 <main>
   <canvas id="title"></canvas>
-  <a class="enter" href="game.html" aria-label="enter"><canvas id="btn"></canvas></a>
+  <a class="enter" href="index.html" aria-label="enter"><canvas id="btn"></canvas></a>
   <canvas id="croc"></canvas>
 </main>
 <script src="assets/paint.js"></script>
@@ -35,30 +35,31 @@ const dpr=Math.min(devicePixelRatio||1,2), blank=(w,h,r)=>{ const c=document.cre
 
 /* ---------- the writing + the button, painted in several versions like everything else ---------- */
 const title=document.getElementById('title'), btn=document.getElementById('btn');
-const fs=Math.round(Math.max(22,Math.min(34,innerWidth*.03))), sp=fs*.2, TEXT="Croc's workshop";
-const probe=document.createElement('canvas').getContext('2d'); probe.font=`400 ${fs}px ${MONO}`;
+const fs=Math.round(Math.max(24,Math.min(38,innerWidth*.034))), sp=fs*.2, TEXT="Croc's workshop";
+const probe=document.createElement('canvas').getContext('2d'); probe.font=`600 ${fs}px ${MONO}`;
 const tw=Math.ceil(probe.measureText(TEXT).width+TEXT.length*sp)+40, th=Math.round(fs*2.4);
-const bw=170, bh=54;
+const bw=180, bh=58, INK=[145,30,16];
 for(const [c,w,h] of [[title,tw,th],[btn,bw,bh]]){ c.width=Math.round(w*dpr); c.height=Math.round(h*dpr); c.style.width=w+'px'; c.style.height=h+'px'; }
 const titleFrames=[], btnFrames=[], bgFrames=[];
 (async function(){
   for(let v=0;v<NV;v++){
     const t=blank(tw,th,dpr), tg=t.getContext('2d'); tg.scale(dpr,dpr);
-    VG.paintedText(tg,TEXT,tw/2,th/2,{r:dpr,size:fs,spacing:sp,seed:11+v*53,hsl:[145,24,30],dens:3.4});
+    await VG.field(tg,[8,th*.16,tw-8,th*.84],()=>VG.hsl(100+Math.random()*20,40,92+Math.random()*6,.7),()=>-.1,{rnd:Math.random,len:[8,16],wid:[3,6],dens:2.6,aj:.3});
+    VG.paintedText(tg,TEXT,tw/2,th/2,{r:dpr,size:fs,spacing:sp,seed:11+v*53,hsl:INK,dens:6,weight:600,under:'rgba(22,48,32,.88)'});
     const b=blank(bw,bh,dpr), bg2=b.getContext('2d'); bg2.scale(dpr,dpr);
-    await VG.handBox(bg2,4,4,bw-4,bh-4,91+v*31,{hsl:[145,24,30]});
-    VG.paintedText(bg2,'enter',bw/2,bh/2+1,{r:dpr,size:15,spacing:5,seed:5+v*17,hsl:[145,24,30],dens:3.4});
+    await VG.handBox(bg2,4,4,bw-4,bh-4,91+v*31,{hsl:INK});
+    VG.paintedText(bg2,'enter',bw/2,bh/2+1,{r:dpr,size:18,spacing:5,seed:5+v*17,hsl:INK,dens:6,weight:600,under:'rgba(22,48,32,.9)'});
     titleFrames.push(t); btnFrames.push(b);
   }
 })();
 
 /* ---------- the van gogh backdrop ---------- */
 (async function(){
-  const bg=document.getElementById('bg'), r=Math.min(devicePixelRatio||1,1.25);
-  const W=bg.width=Math.min(1700,Math.round(innerWidth*r)), H=bg.height=Math.round(W*innerHeight/innerWidth);
+  const bg=document.getElementById('bg'), r=1;
+  const W=bg.width=Math.min(1280,Math.round(innerWidth*r)), H=bg.height=Math.round(W*innerHeight/innerWidth);
   for(let i=0;i<NV;i++){ const c=document.createElement('canvas'); c.width=W; c.height=H; await VG.swirl(c.getContext('2d'),W,H,31+i*977); bgFrames.push(c); if(!i) bg.classList.add('on'); }
 })();
-VG.flicker([{cv:document.getElementById('bg'),frames:bgFrames},{cv:title,frames:titleFrames},{cv:btn,frames:btnFrames}]);
+VG.flicker([{cv:document.getElementById('bg'),frames:bgFrames},{cv:title,frames:titleFrames,still:true},{cv:btn,frames:btnFrames,still:true}],true);
 
 /* ---------- croc, feeling things ---------- */
 const cv=document.getElementById('croc'), g=cv.getContext('2d');

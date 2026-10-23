@@ -67,15 +67,16 @@
   /* THE BOIL, same as the workshop: several paintings of the same scene, and every second or so the page
      quietly flicks to a different one (with a hair of jitter). The shapes never move, only the paint.
      targets = [{cv, frames:[canvas,...]}]; frames can keep arriving while it runs. */
-  VG.flicker=function(targets){
+  VG.flicker=function(targets,still){
     let cur=-1, next=0;
     function loop(ts){
       const n=Math.min(...targets.map(t=>t.frames.length));
       if(n>=1&&ts>=next){
-        let k=cur; if(n>1) while(k===cur) k=(Math.random()*n)|0; else k=0; cur=k;
-        const ox=Math.random()*.6-.3, oy=Math.random()*.6-.3;
+        let k=cur; if(still) k=0; else if(n>1) while(k===cur) k=(Math.random()*n)|0; else k=0; cur=k;
+        const ox=still?0:Math.random()*1.2-.6, oy=still?0:Math.random()*1.2-.6;
         for(const t of targets){ const g=t.cv.getContext('2d'); g.setTransform(1,0,0,1,0,0); g.clearRect(0,0,t.cv.width,t.cv.height); g.drawImage(t.frames[cur%t.frames.length],t.still?0:ox,t.still?0:oy,t.cv.width,t.cv.height); }
-        next=ts+900+Math.random()*600;
+        next=ts+90+Math.random()*50;
+        if(still) return;                                                  // one painting, held still
       }
       requestAnimationFrame(loop);
     }

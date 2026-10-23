@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lavender Workshop</title>
+<style>
+  :root { --bg:#2a2433; --ink:#efe8f5; }
+  html,body { margin:0; background:var(--bg); color:var(--ink); font-family:Georgia,serif; }
+  body { min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; padding:16px; box-sizing:border-box; }
+  canvas { max-width:100%; height:auto; box-shadow:0 10px 40px rgba(0,0,0,.45); }
+  .bar { display:flex; gap:10px; align-items:center; font-size:14px; flex-wrap:wrap; justify-content:center; }
+  button { font:inherit; background:#4a3d5c; color:var(--ink); border:0; padding:8px 14px; border-radius:4px; cursor:pointer; }
+  button:hover { background:#5d4d73; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="bar">
+  <span>Lavender Workshop · after Monet · every mark is x / y / colour numbers · seed <b id="seedLabel"></b></span>
+  <button id="again">New brushwork</button>
+  <button id="save">Save PNG</button>
+</div>
+
+<script>
+/* ============================================================
+   THE PAINTING IS JUST NUMBERS.
+   Canvas is 1200 x 800. x goes left→right, y goes top→bottom.
+   Every "brush mark" is a tiny ellipse: (x, y, length, width, angle, colour).
+   Impressionism = thousands of these, layered, never blended smooth.
+   ============================================================ */
+
+const W = 1200, H = 800;
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+cv.width = W; cv.height = H;
+
+/* ---------- seeded randomness: same seed = same painting ---------- */
+let rnd;
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+const R = (a,b) => a + (b-a)*rnd();                       // random number between a and b
+const hsl = (h,s,l,a=1) => `hsla(${h},${s}%,${l}%,${a})`; // colour from hue/sat/light/alpha
+const lerp = (a,b,t) => a + (b-a)*t;
+
+/* ---------- the brush: one dab of paint ---------- */
+function dab(x,y,len,wid,ang,col){
+  ctx.save();
+  ctx.translate(x,y); ctx.rotate(ang);
+  ctx.fillStyle = col;
+  ctx.beginPath(); ctx.ellipse(0,0,len/2,wid/2,0,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+}
+
+/* ---------- fill a region with scattered dabs ----------
+   bbox  = [x0,y0,x1,y1] area to scatter in
+   clip  = function that draws the region's outline (or null)
+   color = function (x,y) -> colour, so colour can depend on position
+   o     = { n: how many, len:[min,max], wid:[min,max], ang: base angle, aj: angle wobble } */
+function field(bbox, clip, color, o){
+  ctx.save();
+  if (clip){ ctx.beginPath(); clip(ctx); ctx.clip(); }
+  const [x0,y0,x1,y1] = bbox;
+  for (let i=0;i<o.n;i++){
+    const x = R(x0,x1), y = R(y0,y1);
+    dab(x, y, R(o.len[0],o.len[1]), R(o.wid[0],o.wid[1]), o.ang + R(-o.aj,o.aj), color(x,y,i));
+  }
+  ctx.restore();
+}
+
+/* ---------- curves: a point on a bend between p0 and p2 pulled toward c ---------- */
+function bez(p0,c,p2,t){
+  const u = 1-t;
+  const x = u*u*p0[0] + 2*u*t*c[0] + t*t*p2[0];
+  const y = u*u*p0[1] + 2*u*t*c[1] + t*t*p2[1];
+  const dx = 2*u*(c[0]-p0[0]) + 2*t*(p2[0]-c[0]);
+  const dy = 2*u*(c[1]-p0[1]) + 2*t*(p2[1]-c[1]);
+  const a = Math.atan2(dy,dx);
+  return { x, y, a, nx: -Math.sin(a), ny: Math.cos(a) };
+}
+const dist = (p,q) => Math.hypot(p[0]-q[0], p[1]-q[1]);
+
+/* ---------- a sprig of lavender: green stem + a head of purple flecks ---------- */
+function sprig(p0,c,p2,o={}){
+  const headFrac = o.head ?? 0.32, hw = o.hw ?? 13, sw = o.sw ?? 3.4;
+  const steps = Math.ceil(dist(p0,p2)/2.5);
+  for (let i=0;i<=steps;i++){
+    const t = i/steps, p = bez(p0,c,p2,t);
+    dab(p.x,p.y, 9, sw*R(.8,1.2), p.a, hsl(R(75,115),R(16,30),R(40,58),.9));
+  }
+  for (let i=0;i<=steps;i++){
+    const t = i/steps;
+    if (t < 1-headFrac) continue;
+    const k = (t-(1-headFrac))/headFrac;                      // 0 at base of the head → 1 at the tip
+    const prof = 0.18 + 0.82*Math.sin(Math.PI*Math.pow(k,0.75)); // fat in the middle, tapered ends
+    const p = bez(p0,c,p2,t);
+    for (let j=0;j<6;j++){
+      const off = R(-1,1)*hw*prof;
+      const x = p.x + p.nx*off, y = p.y + p.ny*off;
+      const light = R(38,68) + (Math.abs(off)<hw*.25 ? 6 : 0);
+      dab(x,y, R(7,14), R(5,9), p.a + R(-.7,.7), hsl(R(255,288),R(35,62),light,.88));
+    }
+    if (rnd() < .35) dab(p.x+p.nx*R(-hw,hw)*prof, p.y+p.ny*R(-hw,hw)*prof, R(4,8), R(3,6), R(0,6.3), hsl(R(275,300),R(40,70),R(76,88),.8)); // pale highlight fleck
+  }
+}
+
+/* ---------- a satin ribbon along a curve ---------- */
+function ribbon(p0,c,p2,w0,w1,base){
+  const steps = Math.ceil(dist(p0,p2)/2);
+  for (let i=0;i<=steps;i++){
+    const t = i/steps, p = bez(p0,c,p2,t), w = lerp(w0,w1,t);
+    const sheen = Math.sin(t*7 + base.ph)*0.5 + 0.5;          // satin shine, a wave along the length
+    for (let j=0;j<5;j++){
+      const off = R(-.5,.5)*w;
+      const edge = Math.abs(off)/(w*.5);                      // 0 centre → 1 edge
+      const l = base.l + sheen*10 - edge*9 + R(-3,3);
+      dab(p.x+p.nx*off, p.y+p.ny*off, R(8,14), R(3,6), p.a+R(-.12,.12), hsl(base.h+R(-4,4), base.s, l, .92));
+    }
+  }
+}
+/* a closed ribbon loop (for the bow) */
+function ribbonLoop(cx,cy,rx,ry,rot,w,base){
+  const steps = 120;
+  for (let i=0;i<steps;i++){
+    const th = i/steps*Math.PI*2;
+    const ex = Math.cos(th)*rx, ey = Math.sin(th)*ry;
+    const x = cx + ex*Math.cos(rot) - ey*Math.sin(rot);
+    const y = cy + ex*Math.sin(rot) + ey*Math.cos(rot);
+    const tx = -Math.sin(th)*rx, ty = Math.cos(th)*ry;
+    const a = Math.atan2(tx*Math.sin(rot)+ty*Math.cos(rot), tx*Math.cos(rot)-ty*Math.sin(rot));
+    const sheen = Math.sin(th*2 + base.ph)*.5+.5;
+    for (let j=0;j<5;j++){
+      const off = R(-.5,.5)*w;
+      const edge = Math.abs(off)/(w*.5);
+      dab(x - Math.sin(a)*off, y + Math.cos(a)*off, R(8,13), R(3,6), a+R(-.1,.1), hsl(base.h+R(-4,4), base.s, base.l + sheen*10 - edge*9 + R(-3,3), .92));
+    }
+  }
+}
+
+/* ---------- soft cast shadow (an ellipse of dark, translucent dabs) ---------- */
+function shadow(cx,cy,rx,ry,a=.22){
+  field([cx-rx,cy-ry,cx+rx,cy+ry], c=>c.ellipse(cx,cy,rx,ry,0,0,Math.PI*2),
+    ()=>hsl(R(255,285),R(22,34),R(14,24),a),
+    {n:Math.round(rx*ry/28), len:[16,40], wid:[4,9], ang:0, aj:.12});
+}
+
+/* ============================================================
+   THE SCENE
+   ============================================================ */
+function paint(seed){
+  rnd = mulberry32(seed);
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle = '#d9cde6'; ctx.fillRect(0,0,W,H);
+
+  const WIN = {x:110, y:80, w:320, h:320};
+  const glow = [270, 230];                                    // where the window light comes from
+
+  /* ---- 1. back wall: pale lilac, warmer near the window ---- */
+  const wallCol = (x,y)=>{
+    const g = Math.exp(-Math.hypot(x-glow[0], y-glow[1])/520);
+    if (rnd() < g*.45) return hsl(R(36,50),R(50,70),R(86,93),.55);   // cream light
+    return hsl(R(258,292),R(24,40),R(74,86)-(1-g)*6,.55);            // lilac wall
+  };
+  field([0,0,W,540], null, wallCol, {n:900,  len:[70,160], wid:[36,70], ang:.15, aj:.5});
+  field([0,0,W,540], null, wallCol, {n:6500, len:[18,44],  wid:[8,16],  ang:.3,  aj:.8});
+
+  /* ---- 2. the window: Monet haze of a lavender field outside ---- */
+  const inWin = c=>c.rect(WIN.x,WIN.y,WIN.w,WIN.h);
+  const winBox = [WIN.x,WIN.y,WIN.x+WIN.w,WIN.y+WIN.h];
+  field(winBox, inWin, (x,y)=>{
+    if (y < 215) return hsl(R(200,225),R(40,62),R(72,86),.7);                        // morning sky
+    if (y < 245) return hsl(R(260,300),R(30,50),R(76,88),.7);                        // haze at the horizon
+    const depth = (y-245)/155;                                                       // 0 far → 1 near
+    const row = Math.floor((y-245 + Math.sin(x*.045)*5 + R(-4,4))/(5+depth*9));     // wavy rows, wider up close
+    const haze = 1-depth;                                                            // far rows fade toward lilac
+    return row%2 ? hsl(R(256,286),R(42,60)-haze*14,R(38,58)+haze*18,.7) : hsl(R(70,100),R(20,34)-haze*8,R(54,70)+haze*10,.6);
+  }, {n:8200, len:[16,36], wid:[5,11], ang:0, aj:.12});
+  field(winBox, inWin, ()=>hsl(R(42,56),R(70,90),R(88,96),.12), {n:160, len:[20,50], wid:[10,24], ang:0, aj:.8}); // sun glare
+  // window frame + sill
+  const frame = c=>{ c.rect(WIN.x-10,WIN.y-10,WIN.w+20,14); c.rect(WIN.x-10,WIN.y-10,14,WIN.h+20); c.rect(WIN.x+WIN.w-4,WIN.y-10,14,WIN.h+20);
+    c.rect(WIN.x+WIN.w/2-6,WIN.y-10,12,WIN.h+20); c.rect(WIN.x-10,WIN.y+WIN.h/2-5,WIN.w+20,10); };
+  field([WIN.x-14,WIN.y-14,WIN.x+WIN.w+14,WIN.y+WIN.h+14], frame, ()=>hsl(R(36,52),R(28,50),R(88,96),.9), {n:2600, len:[10,22], wid:[4,9], ang:0, aj:.9});
+  field([WIN.x-24,WIN.y+WIN.h-6,WIN.x+WIN.w+24,WIN.y+WIN.h+16], null, ()=>hsl(R(34,48),R(22,40),R(82,92),.85), {n:520, len:[16,34], wid:[5,10], ang:0, aj:.05});
+
+  /* ---- 3. hanging dried lavender on the wall (right) ---- */
+  const HX = 985;
+  ctx.save(); // nail + string
+  dab(HX,86,7,7,0,hsl(30,10,32,.9));
+  ctx.restore();
+  for (let i=0;i<5;i++){
+    const dx = (i-2)*9;
+    sprig([HX+dx*.3,112],[HX+dx*1.3,190],[HX+dx*2.2,296+R(-14,14)],{head:.42,hw:12,sw:3});
+  }
+  ribbon([HX-26,128],[HX,134],[HX+26,128],10,10,{h:345,s:34,l:78,ph:1});
+  ribbon([HX,132],[HX-10,152],[HX-18,170],7,6,{h:345,s:34,l:76,ph:2});
+  ribbon([HX,132],[HX+8,148],[HX+16,166],7,6,{h:345,s:34,l:76,ph:4});
+
+  /* ---- 4. the wooden desk ---- */
+  const DESK = 500;
+  field([0,DESK,W,H+10], null, (x,y)=>{
+    const g = 6*Math.sin(y*.085 + Math.sin(x*.004)*3) + 4*Math.sin(y*.31+x*.002);    // wood grain wave
+    return hsl(R(22,34),R(34,52),R(36,48)+g*.6,.62);
+  }, {n:17000, len:[70,230], wid:[3,8], ang:0, aj:.025});
+  field([0,DESK,W,H+10], null, ()=>hsl(R(18,30),R(30,46),R(26,36),.35), {n:3200, len:[120,300], wid:[1.5,3], ang:0, aj:.015}); // fine dark grain lines
+  // back edge of desk, catching light
+  field([0,DESK-6,W,DESK+12], null, ()=>hsl(R(28,40),R(40,60),R(56,70),.7), {n:700, len:[30,90], wid:[3,7], ang:0, aj:.02});
+  // front edge, dark
+  field([0,770,W,H+10], null, ()=>hsl(R(18,28),R(30,44),R(20,28),.7), {n:1500, len:[50,160], wid:[4,10], ang:0, aj:.02});
+  // window light falling across the desk
+  field([150,DESK,700,H], c=>{ c.moveTo(330,DESK); c.lineTo(640,DESK); c.lineTo(520,H); c.lineTo(120,H); c.closePath(); },
+    (x,y)=>hsl(R(40,52),R(60,85),R(80,90),.05*Math.exp(-Math.abs(x-420)/160)), {n:2200, len:[40,120], wid:[8,18], ang:0, aj:.05});
+
+  /* ---- 5. WATER BOWL (right), a nod to Monet's water lilies ---- */
+  const B = {x:985, y:672};
+  shadow(B.x+36, B.y+32, 150, 22, .26);
+  const ell = (cx,cy,rx,ry)=>(c=>c.ellipse(cx,cy,rx,ry,0,0,Math.PI*2));
+  field([B.x-135,B.y-5,B.x+135,B.y+60], ell(B.x,B.y+16,132,40), (x,y)=>hsl(R(34,50),R(12,28),lerp(78,56,(y-B.y)/50),.85), {n:900, len:[10,24], wid:[4,9], ang:0, aj:.3}); // bowl body
+  field([B.x-135,B.y-42,B.x+135,B.y+42], ell(B.x,B.y,132,38), ()=>hsl(R(40,52),R(32,56),R(86,95),.9), {n:900, len:[10,22], wid:[4,8], ang:0, aj:.4});   // cream rim
+  field([B.x-120,B.y-32,B.x+120,B.y+32], ell(B.x+2,B.y+3,117,30), (x,y)=>{                                                                                // the water
+    const k = (y-(B.y-30))/60;
+    const r = rnd();
+    if (r < .22) return hsl(R(270,295),R(34,56),R(60,76),.6);       // lavender reflected
+    if (r < .34) return hsl(R(335,352),R(36,56),R(78,88),.5);       // pink cloud
+    if (r < .46) return hsl(R(44,54),R(60,86),R(84,94),.5);         // sun
+    return hsl(R(186,212),R(32,52),lerp(78,60,k),.62);              // sky-blue water
+  }, {n:2300, len:[14,32], wid:[3,7], ang:0, aj:.06});
+  // petals + a floating sprig
+  for (let i=0;i<14;i++){ const x=B.x+R(-90,90), y=B.y+R(-18,24); dab(x,y,R(8,13),R(4,7),R(-.5,.5),hsl(R(262,288),R(40,60),R(52,70),.9)); }
+  sprig([B.x-70,B.y+8],[B.x-30,B.y-4],[B.x+10,B.y+10],{head:.42,hw:8,sw:2.4});
+  field([B.x-80,B.y-4,B.x+90,B.y+14], null, ()=>hsl(R(190,220),R(34,54),R(86,95),.28), {n:90, len:[12,30], wid:[1.5,3], ang:0, aj:.03}); // ripple lines
+
+  /* ---- 6. GLASS JAR of water and standing lavender (centre-right) ---- */
+  const J = {x:748, base:650, w:150, top:396};
+  const jx0 = J.x-J.w/2, jx1 = J.x+J.w/2;
+  shadow(J.x+78, J.base+14, 118, 20, .26);
+  // lavender stems rising from the jar
+  const tops = [[610,300],[664,262],[716,236],[772,246],[828,284],[876,346],[690,310],[802,262]];
+  const bases = [-26,-16,-6,6,16,26,-12,12];
+  tops.forEach((t,i)=>{
+    const b = [J.x+bases[i], J.base-8];
+    sprig(b,[lerp(b[0],t[0],.35)+R(-26,26), lerp(b[1],t[1],.55)], [t[0],t[1]], {head:.36, hw:14});
+  });
+  // glass + water laid OVER the stems so the lower stems look submerged
+  const jar = c=>{ const r=18; c.moveTo(jx0+8,J.top); c.lineTo(jx1-8,J.top); c.lineTo(jx1,J.base-r); c.quadraticCurveTo(jx1,J.base,jx1-r,J.base);
+    c.lineTo(jx0+r,J.base); c.quadraticCurveTo(jx0,J.base,jx0,J.base-r); c.closePath(); };
+  const waterTop = 462;
+  field([jx0,J.top,jx1,J.base], jar, ()=>hsl(R(190,215),R(30,50),R(88,96),.2), {n:600, len:[14,34], wid:[6,12], ang:1.5, aj:.3});   // glass tint
+  field([jx0,waterTop,jx1,J.base], jar, (x,y)=>{
+    const r = rnd();
+    if (r < .26) return hsl(R(268,292),R(32,54),R(56,72),.42);  // lavender stems refracted through water
+    if (r < .34) return hsl(R(44,54),R(60,86),R(86,95),.4);
+    return hsl(R(188,212),R(34,54),lerp(80,62,(y-waterTop)/(J.base-waterTop)),.5);
+  }, {n:2000, len:[12,28], wid:[4,9], ang:1.57, aj:.35});
+  // refracted, slightly shifted stems under the water
+  field([jx0,waterTop,jx1,J.base-6], jar, ()=>hsl(R(85,120),R(20,34),R(46,62),.5), {n:260, len:[18,40], wid:[2.5,5], ang:1.57, aj:.1});
+  // water surface line
+  field([jx0+4,waterTop-3,jx1-4,waterTop+5], jar, ()=>hsl(R(190,214),R(30,50),R(90,97),.8), {n:130, len:[14,26], wid:[2,4], ang:0, aj:.05});
+  // glass highlights + rim
+  field([jx0+8,J.top+8,jx0+22,J.base-14], jar, ()=>hsl(R(40,60),R(30,70),R(94,100),.55), {n:220, len:[16,44], wid:[2.5,5], ang:1.57, aj:.05});
+  field([jx1-18,J.top+30,jx1-8,J.base-24], jar, ()=>hsl(R(200,220),R(20,40),R(92,98),.35), {n:90, len:[14,34], wid:[2,4], ang:1.57, aj:.05});
+  field([jx0-3,J.top-5,jx1+3,J.top+6], null, ()=>hsl(R(190,215),R(20,40),R(86,96),.75), {n:230, len:[12,24], wid:[2.5,5], ang:0, aj:.04});
+  field([jx0+4,J.base-8,jx1-4,J.base+4], jar, ()=>hsl(R(200,222),R(24,44),R(70,82),.6), {n:150, len:[14,28], wid:[3,6], ang:0, aj:.04}); // thick glass base
+
+  /* ---- 7. lavender BUNDLE tied with ribbon, lying on the desk (left) ---- */
+  const T = [470,696];                                           // the tie point
+  shadow(T[0]+10, T[1]+22, 230, 18, .26);
+  for (let j=0;j<7;j++){
+    const o = (j-3)*7;
+    sprig([640,T[1]+o*.8+R(-3,3)], [T[0]+40,T[1]+o*.4], [236+R(-12,16),T[1]+o*1.6-4+R(-6,6)], {head:.34, hw:15, sw:3.4});
+  }
+  // trailing tails first (they sit under the bow)
+  const rb = {h:344,s:36,l:78,ph:0.4};
+  ribbon([T[0],T[1]+4],[T[0]-80,T[1]+60],[T[0]-210,T[1]+78],17,14,{...rb,ph:1.2});        // tail toward the front-left
+  ribbon([T[0],T[1]+4],[T[0]+120,T[1]+90],[T[0]+330,T[1]+86],17,13,{...rb,ph:2.6});       // long tail sweeping right
+  // bow loops
+  ribbonLoop(T[0]-42,T[1]-22,40,19,-.45,15,{...rb,ph:.2});
+  ribbonLoop(T[0]+44,T[1]-22,40,19, .45,15,{...rb,ph:3.4});
+  // band wrapped around the stems, then the knot
+  ribbon([T[0]-4,T[1]-36],[T[0]+4,T[1]],[T[0]-2,T[1]+34],15,15,{...rb,l:72,ph:5});
+  field([T[0]-14,T[1]-14,T[0]+14,T[1]+14], ell(T[0],T[1]-1,13,11), ()=>hsl(R(338,350),R(34,46),R(68,80),.95), {n:90, len:[6,12], wid:[3,6], ang:.8, aj:1});
+
+  /* ---- 8. one loose sprig in the foreground ---- */
+  shadow(1010,780,90,8,.2);
+  sprig([1120,768],[1040,752],[900,756],{head:.34,hw:12});
+
+  /* ---- 9. finishing the painting: light, haze, grain ---- */
+  // bloom from the window (additive glow, like glare on a wet canvas)
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  let g = ctx.createRadialGradient(glow[0],glow[1],10,glow[0],glow[1],560);
+  g.addColorStop(0,'rgba(255,238,200,.05)'); g.addColorStop(1,'rgba(255,238,200,0)');
+  ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+  ctx.restore();
+  // soft vignette
+  g = ctx.createRadialGradient(W*.5,H*.5,H*.35,W*.5,H*.5,H*.95);
+  g.addColorStop(0,'rgba(60,40,80,0)'); g.addColorStop(1,'rgba(60,40,80,.30)');
+  ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+  // canvas grain: thousands of tiny light and dark flecks
+  for (let i=0;i<26000;i++){
+    const light = rnd()<.5;
+    dab(R(0,W),R(0,H),R(1.5,4),R(1,2.5),R(0,6.3), light?hsl(40,60,95,.07):hsl(270,30,15,.06));
+  }
+}
+
+/* ---------- buttons ---------- */
+let seed = 7;
+const label = document.getElementById('seedLabel');
+function go(s){ seed = s; label.textContent = s; paint(s); }
+document.getElementById('again').onclick = ()=>go(Math.floor(Math.random()*9999));
+document.getElementById('save').onclick = ()=>{ const a=document.createElement('a'); a.download=`lavender-workshop-${seed}.png`; a.href=cv.toDataURL('image/png'); a.click(); };
+go(7);
+</script>
+</body>
+</html>

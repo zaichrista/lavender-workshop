@@ -14,7 +14,7 @@
   #art { opacity:0; transition:opacity 1.8s ease; }
   #art.on { opacity:1; }
   #glow { pointer-events:none; mix-blend-mode:screen; opacity:0; }
-  #glow.on { opacity:1; animation:breathe 14s ease-in-out infinite alternate; transition:opacity 2.4s ease; }
+  #glow.on { opacity:1; transition:opacity 2.4s ease; }
   @keyframes breathe { from { filter:brightness(.78); } to { filter:brightness(1.05); } }
   #shade { position:fixed; inset:0; pointer-events:none; background:radial-gradient(ellipse at 50% 45%,transparent 55%,rgba(40,34,20,.22)); }
   #hang { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; font-size:12px; letter-spacing:.3em; color:var(--ink); opacity:.7; pointer-events:none; transition:opacity 1.5s ease; }
@@ -73,18 +73,15 @@
   g.fillStyle=sh; g.fillRect(0,floorY,Wc,vh-floorY);
 
   /* ---- title on the wall ---- */
-  g.fillStyle='rgba(58,52,38,.7)'; g.font=`13px ${MONO}`; try{ g.letterSpacing='5px'; }catch(e){}
-  g.textAlign='left'; g.fillText('gifts from croc',x00,Math.round(floorY*.1));
-  try{ g.letterSpacing='0px'; }catch(e){}
 
   /* ---- the frames ---- */
-  const pictureLavender=async (box)=>{
-    const [x0,y0,x1,y1]=box, hz=y0+(y1-y0)*.45;
+  const pictureLavender=async (box,rnd)=>{
+    const R=(a,b)=>a+(b-a)*rnd(), [x0,y0,x1,y1]=box, hz=y0+(y1-y0)*.45;
     await VG.field(g,[x0,y0,x1,hz],(x,y)=>hsl(R(215,250),R(40,60),VG.lerp(86,74,(y-y0)/(hz-y0)),.9),()=>-.1,{rnd,len:[8,14],wid:[2,3.5],dens:3,aj:.2});
     await VG.field(g,[x0,hz,x1,y1],()=>rnd()<.2?hsl(R(80,110),R(30,45),R(55,70)):hsl(R(262,288),R(40,58),R(48,70)),()=>-Math.PI/2+.12,{rnd,len:[8,16],wid:[1.6,3],dens:3.6,aj:.25});
   };
   for(let i=0;i<slots;i++){
-    const gf=list[i], opened=!!gf&&seen.includes(gf.id), x=x00+i*(fw+gap), ox=x-B-MAT, oy=top-B-MAT, ow=fw+2*(B+MAT), oh=fh+2*(B+MAT);
+    const ar=VG.rng(500+i), AR=(a,b)=>a+(b-a)*ar(), gf=list[i], opened=!!gf&&seen.includes(gf.id), x=x00+i*(fw+gap), ox=x-B-MAT, oy=top-B-MAT, ow=fw+2*(B+MAT), oh=fh+2*(B+MAT);
     // lamp over the frame
     g.strokeStyle='hsl(38,40,34)'; g.lineWidth=3; g.lineCap='round'; g.beginPath(); g.moveTo(x+fw/2,oy-34); g.lineTo(x+fw/2,oy-16); g.stroke();
     g.fillStyle='hsl(40,50,48)'; g.beginPath(); g.ellipse(x+fw/2,oy-38,34,5,0,0,6.3); g.fill();
@@ -101,8 +98,8 @@
     if(opened&&imgs[i]){
       const im=imgs[i], s=Math.max(fw/im.naturalWidth,fh/im.naturalHeight); g.save(); g.beginPath(); g.rect(px0,py0,fw,fh); g.clip();
       g.drawImage(im,px0+(fw-im.naturalWidth*s)/2,py0+(fh-im.naturalHeight*s)/2,im.naturalWidth*s,im.naturalHeight*s); g.restore();
-    } else if(opened){ await pictureLavender([px0,py0,px1,py1]); }
-    else { await VG.field(g,[px0,py0,px1,py1],()=>hsl(R(40,52),R(14,26),R(88,95),.9),()=>0,{rnd,len:[8,14],wid:[2,3],dens:2.6,aj:.08}); }
+    } else if(opened){ await pictureLavender([px0,py0,px1,py1],ar); }
+    else { await VG.field(g,[px0,py0,px1,py1],()=>hsl(AR(40,52),AR(14,26),AR(88,95),.9),()=>0,{rnd:ar,len:[8,14],wid:[2,3],dens:2.6,aj:.08}); }
     // light falling off at the picture's top edge
     const ig=g.createLinearGradient(0,py0,0,py1); ig.addColorStop(0,'rgba(30,24,10,.22)'); ig.addColorStop(.12,'rgba(30,24,10,0)'); g.fillStyle=ig; g.fillRect(px0,py0,fw,fh);
     // plaque
@@ -132,11 +129,11 @@
 
   /* ---- reveal, slowly ---- */
   vars.push(await paintScene(2024,true));
-  VG.flicker([{cv:art,frames:vars}]);
+  VG.flicker([{cv:art,frames:vars}],true);
   document.getElementById('hang').classList.add('off');
   art.classList.add('on'); glow.classList.add('on');
   scroller.scrollLeft=Math.max(0,(Wc-vw)/2);
-  for(let v=1;v<NV;v++) vars.push(await paintScene(2024+v*977,false));
+  
 
   /* ---- step closer to an opened painting ---- */
   const viewer=document.getElementById('viewer'), vimg=document.getElementById('vimg');

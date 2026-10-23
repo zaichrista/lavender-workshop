@@ -2,7 +2,7 @@
    The lines take whichever colour reads against what's behind them (samples canvas#main if there is one). */
 (function(){
   const MONO='ui-monospace,Menlo,Consolas,"Courier New",monospace';
-  const LINKS=[['gifts','gifts.html'],['meet croc','game.html'],['home','home.html']];
+  const LINKS=[['gifts','gifts.html'],['meet croc','index.html'],['home','home.html']];
   const css=document.createElement('style');
   css.textContent=`
   @keyframes pgin{from{opacity:0}to{opacity:1}}
