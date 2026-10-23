@@ -18,7 +18,7 @@
          gap:10px; align-items:center; padding:6px 12px; border-radius:999px; background:rgba(24,16,36,.5); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); }
   #play { background:none; border:0; color:var(--ink); font-size:16px; width:24px; cursor:pointer; padding:0; }
   #slider { flex:1; accent-color:#b9a0e6; }
-  #notice { position:absolute; top:max(14px,env(safe-area-inset-top)); left:50%; transform:translate(-50%,-24px); opacity:0; transition:opacity 1.3s ease,transform 1.3s ease; padding:9px 18px; border-radius:999px;
+  #notice { position:absolute; top:max(58px,calc(env(safe-area-inset-top) + 44px)); left:50%; transform:translate(-50%,-24px); opacity:0; transition:opacity 1.3s ease,transform 1.3s ease; padding:9px 18px; border-radius:999px;
             background:rgba(44,28,66,.72); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px); font-size:13px; letter-spacing:.06em; pointer-events:none; white-space:nowrap; }
   #notice.show { opacity:1; transform:translate(-50%,0); }
   #gift { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(14,8,24,.64); backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px); opacity:0; visibility:hidden; transition:opacity 1s ease, visibility 0s 1s; }
@@ -28,6 +28,11 @@
   #giftTitle { font-size:17px; margin-top:6px; }
   #giftNote { font-size:13px; opacity:.75; font-style:italic; }
   #giftClose { margin-top:6px; background:#7b5ea7; color:#fff; border:0; border-radius:999px; padding:7px 20px; font:inherit; font-size:13px; letter-spacing:.06em; cursor:pointer; }
+  #love { position:absolute; z-index:3; top:max(12px,env(safe-area-inset-top)); left:50%; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center; gap:6px; pointer-events:none; font-family:ui-monospace,Menlo,Consolas,"Courier New",monospace; font-size:11px; letter-spacing:.24em; color:#fff4f8; text-shadow:0 1px 6px rgba(40,10,40,.7); }
+  #love.pulse #loveLv { animation:lvpulse 1.6s ease; }
+  @keyframes lvpulse { 0%,100% { transform:scale(1); } 35% { transform:scale(1.25); } }
+  #loveBar { width:min(220px,38vw); height:5px; border-radius:5px; background:rgba(255,255,255,.28); overflow:hidden; box-shadow:0 0 8px rgba(40,10,40,.3); }
+  #loveBar i { display:block; height:100%; background:linear-gradient(90deg,#ff9ec0,#ff6f9f); transform:scaleX(0); transform-origin:left; transition:transform .9s ease; }
   #loading { position:absolute; inset:0; z-index:5; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:22px; background:radial-gradient(ellipse at 50% 45%,#e8f5e8,#c6e2cb); color:#2c4733; font-family:ui-monospace,Menlo,Consolas,"Courier New",monospace; font-size:13px; letter-spacing:.3em; pointer-events:none; opacity:1; transition:opacity 1.6s ease; }
   #loading.done { opacity:0; }
   #bar { width:min(260px,60vw); height:2px; background:rgba(44,71,51,.2); border-radius:2px; overflow:hidden; }
@@ -38,6 +43,7 @@
 <body>
 <div id="stage">
   <canvas id="main"></canvas>
+  <div id="love"><span id="loveLv">love · 1</span><div id="loveBar"><i></i></div></div>
   <div id="hud"><div id="clock">07:00</div><div id="phase">Morning</div></div>
   <div id="loading"><div>painting the scenery</div><div id="bar"><i></i></div></div>
   <div id="notice">A gift has arrived 🎁 on the table</div>
@@ -88,9 +94,10 @@ const cj=(h,s,l,a=1,j=1)=>`hsla(${(h+R(-5,5)*j)|0},${clamp(s+R(-7,7)*j,0,100)|0}
 /* ---------- layers ---------- */
 function makeLayer(x,y,w,h){ const c=document.createElement('canvas'); c.width=w*SC; c.height=h*SC; const g=c.getContext('2d'); g.scale(SC,SC); g.translate(-x,-y); g.lineCap='round'; return {c,g,ox:x,oy:y,w,h}; }
 const OB_WIN=[100,250,360,440], OB_DOOR=[1380,280,1590,580], FB=[0,430,W,H-430];
-const BACK=[],MID=[],FRONT=[],OUTW=[],OUTD=[],SKYW=[],SKYD=[];
+const BACK=[],MID=[],FRONT=[],OUTW=[],OUTD=[],SKYW=[],SKYD=[],CURT=[],DOORL=[];
 for(let v=0;v<N;v++){
   BACK.push(makeLayer(0,0,W,H)); MID.push(makeLayer(0,0,W,H)); FRONT.push(makeLayer(...FB));
+  CURT.push(makeLayer(70,239,320,268)); DOORL.push(makeLayer(DOOR[0],DOOR[1],DOOR[2]-DOOR[0],DOOR[3]-DOOR[1]));
   OUTW.push(makeLayer(OB_WIN[0],OB_WIN[1],OB_WIN[2]-OB_WIN[0],OB_WIN[3]-OB_WIN[1]));
   OUTD.push(makeLayer(OB_DOOR[0],OB_DOOR[1],OB_DOOR[2]-OB_DOOR[0],OB_DOOR[3]-OB_DOOR[1]));
   SKYW.push(makeLayer(OB_WIN[0],OB_WIN[1],OB_WIN[2]-OB_WIN[0],HZ-OB_WIN[1]+4));
@@ -228,7 +235,7 @@ function paintBack(v){
   box(wx0-12,wy0,wx0,wy1,fr,{ang:vert,ea:.4}); box(wx1,wy0,wx1+12,wy1,fr,{ang:vert,ea:.4});
   box((wx0+wx1)/2-4,wy0,(wx0+wx1)/2+4,wy1,fr,{ang:vert,ea:.4}); box(wx0,(wy0+wy1)/2-3,wx1,(wy0+wy1)/2+3,fr,{ea:.4});
   box(wx0-30,wy1+8,wx1+30,wy1+20,[38,28,88],{ea:.4});
-  for(const [a,b] of [[wx0-52,wx0-14],[wx1+14,wx1+52]]) facePoly([[a,wy0-24],[b,wy0-24],[b-4,wy1+80],[a+4,wy1+80]],[268,24,76],{ang:vert,aj:.12,ea:.35,coarse:true});
+  box(wx0-60,wy0-32,wx1+60,wy0-26,[28,40,34],{ea:.4}); box(wx0-64,wy0-35,wx0-56,wy0-23,[28,40,34],{ea:.4}); box(wx1+56,wy0-35,wx1+64,wy0-23,[28,40,34],{ea:.4});   // curtain rod (the curtains themselves move: see paintCurt)
   box(208,wy1-26,228,wy1,[196,28,78],{edge:false}); bunch(218,wy1-24,34,56,8,6.5,-1);
   // doorway: frame + threshold
   const [dx0,dy0,dx1,dy1]=DOOR, df=[28,40,32];
@@ -305,6 +312,10 @@ function paintMid(v){
   paintPoly(rect(1211,296,1269,386),(x,y)=>{const d=Math.hypot(x-sx,y-sy); return d<10?cj(50,80,70,.97):cj(R(215,235),55,lerp(28,52,Math.sin(d*.45)*.5+.5),.97);},(x,y)=>Math.atan2(y-sy,x-sx)+Math.PI/2+Math.sin(Math.hypot(x-sx,y-sy)*.3),{dens:3,len:[3,6],wid:[1,1.6],aj:.1});
   box(1160,408,1168,436,[44,30,92],{edge:false}); box(1178,414,1186,436,[44,30,92],{edge:false});   // candles
   box(1300,418,1318,436,[196,28,78],{edge:false}); bunch(1309,420,20,32,6,4.5,-1);
+  /* ---- the secret jar of treats, on the mantel ---- */
+  box(1222,405,1250,436,[190,24,84],{ea:.45});                                                  // glass
+  for(const [x,y,h,s,l] of [[1230,431,32,62,60],[1240,431,345,55,70],[1235,425,42,60,66],[1244,424,100,40,62],[1229,423,28,60,58]]) facePoly(ellPts(x,y,4.2,3.4,8),[h,s,l],{dens:3,ea:.35,len:[3,5],wid:[1,1.6]});   // biscuits
+  box(1221,399,1251,406,[28,40,34],{ea:.45}); box(1232,395,1240,399,[32,44,56],{ea:.4});          // lid + knob
   /* ---- ANALOGUE CLOCK in the blank space above the painting (hands are drawn live) ---- */
   const [clx,cly,clr]=CLOCK;
   facePoly(ellPts(clx,cly,clr+8,clr+8,30),[28,40,34],{ea:.5,dens:3});                 // wooden rim
@@ -314,6 +325,25 @@ function paintMid(v){
   G.save(); G.font='bold 12px ui-monospace, SFMono-Regular, Menlo, Consolas, "Courier New", monospace'; G.textAlign='center'; G.textBaseline='middle'; G.fillStyle='hsla(260,30,22,.92)';
   for(const [tx,deg] of [['12',-90],['3',0],['6',90],['9',180]]){ const a=deg*Math.PI/180, r=clr-19; G.fillText(tx,clx+Math.cos(a)*r+R(-.5,.5),cly+Math.sin(a)*r+R(-.5,.5)); }
   G.restore();
+}
+
+/* the curtains + the door leaf are painted closed; the game squeezes them sideways to open them */
+function paintCurt(v){
+  use(CURT[v]);
+  const [wx0,wy0,wx1,wy1]=WIN, top=wy0-24, bot=wy1+80, mid=(wx0+wx1)/2;
+  for(const [a,b,k] of [[wx0-52,mid+2,0],[mid-2,wx1+52,1]]){
+    facePoly([[a,top],[b,top],[b-k*4,bot],[a+(1-k)*4,bot]],[268,24,76],{ang:vert,aj:.12,ea:.35,coarse:true});
+    for(let x=a+9;x<b-5;x+=13) for(let y=top+6;y<bot-4;y+=11) stk(x+R(-1.2,1.2),y,11,R(1.4,2.4),Math.PI/2,cj(262,26,56,.42,.4),0);   // soft folds
+    for(let x=a+15;x<b-5;x+=26) for(let y=top+8;y<bot-4;y+=12) stk(x+R(-1,1),y,10,R(1,1.8),Math.PI/2,cj(270,22,88,.35,.4),0);          // light on the folds
+  }
+}
+function paintDoor(v){
+  use(DOORL[v]);
+  const [x0,y0,x1,y1]=DOOR;
+  facePoly(rect(x0,y0,x1,y1),[30,46,42],{ang:vert,coarse:true,ea:.4,aj:.1});
+  for(let x=x0+30;x<x1-10;x+=30) for(let y=y0+4;y<y1-4;y+=10) stk(x+R(-.8,.8),y,10,R(1.4,2.2),Math.PI/2,cj(26,32,24,.5,.4),0);   // plank seams
+  for(const [a,b] of [[y0+22,y0+112],[y0+128,y1-24]]) edge(rect(x0+16,a,x1-16,b),[26,40,20],1.6,.6);                                // raised panels
+  facePoly(ellPts(x0+16,(y0+y1)/2+10,6,6,12),[44,70,60],{ea:.5,dens:3});                                                           // handle on the free edge
 }
 
 function paintFront(v){
@@ -370,7 +400,7 @@ async function paintAll(){
   for(let v=0;v<N;v++){
     rnd=mulberry32(1000+v*977); lr=mulberry32(5);        // brush changes per variant, layout stays identical
     paintBack(v);  if(!v) setProg(.5); await tick();
-    paintMid(v);   if(!v) setProg(.75); await tick();
+    paintMid(v); paintCurt(v); paintDoor(v);   if(!v) setProg(.75); await tick();
     paintFront(v); paintOut(v); paintSkyTex(v); if(!v) setProg(1); await tick();
     avail=v+1;
     if(!v) setTimeout(()=>{ const L=document.getElementById('loading'); L.classList.add('done'); setTimeout(()=>L.style.display='none',1800); },800);
@@ -392,6 +422,22 @@ function sunMoon(t){
   const u=(t-6)/12, sun=(u>=0&&u<=1)?bodyPos(u):null;
   const v=t>=18?(t-18)/12:(t+6)/12, moon=(v>=0&&v<=1)?bodyPos(v):null;
   return {sun,moon,u,v,elev:(u>=0&&u<=1)?Math.sin(Math.PI*u):0};
+}
+/* when the curtains / door are open: curtains 06:25 → 22:16, door 06:34 → 22:07 (croc does both just before bed and just after waking; times are decimal hours, see openTargets) */
+const openTargets=h=>({curt:(h>=6.42&&h<22.27)?1:0, door:(h>=6.57&&h<22.12)?1:0});
+const ease=x=>x*x*(3-2*x);
+/* tapping the door overrides the schedule until the schedule next changes its mind. Open at night = croc gets up, grumpy, to shut it. */
+let doorOverride=null, lastSchedDoor=null, sleepNow=false, manualArrived=false;
+const isNight=h=>h>=21||h<6.4;
+const effTargets=h=>{ const o=openTargets(h); if(doorOverride!==null) o.door=doorOverride; return o; };
+function drawCurtains(S,v){
+  const L=CURT[v], src=tintedSprite(L,S.room), s=lerp(1,.25,ease(Scene.curt)), pw=154;
+  M.drawImage(src,8,0,pw,L.h,78+off[0],L.oy+off[1],pw*s,L.h);
+  M.drawImage(src,158,0,pw,L.h,382-pw*s+off[0],L.oy+off[1],pw*s,L.h);
+}
+function drawDoor(S,v){
+  const L=DOORL[v], s=lerp(1,.09,ease(Scene.door));
+  M.drawImage(tintedSprite(L,S.room),0,0,L.w,L.h,DOOR[2]-L.w*s+off[0],L.oy+off[1],L.w*s,L.h);     // hinged on the right edge
 }
 function tint(L,c,dx=0,dy=0){
   if (c[3]<.01){ M.drawImage(L.c,L.ox+dx,L.oy+dy,L.w,L.h); return; }
@@ -435,12 +481,12 @@ function shaft(hole,s,run,I,col){
 function drawLightsBehind(S,t,sm){
   M.save(); M.globalCompositeOperation='lighter';
   const sunI=clamp(sm.elev*1.5,0,1), warm=1-clamp(sm.elev*2,0,1), sc=[255,lerp(240,170,warm),lerp(200,100,warm)], run=lerp(1.5,.45,Math.sin(Math.PI*clamp(sm.u,0,1)));
-  const wI=sunI*clamp((.62-sm.u)/.24,0,1), dI=sunI*clamp((sm.u-.38)/.24,0,1);
+  const cO=ease(Scene.curt), dO=ease(Scene.door), wI=sunI*clamp((.62-sm.u)/.24,0,1)*cO, dI=sunI*clamp((sm.u-.38)/.24,0,1)*dO;
   shaft(WIN,1,run,wI,sc); shaft(DOOR,-1,run,dI,sc);
   const moonI=S.stars>.5?.32*S.stars:0, mc=[150,170,255];
-  shaft(WIN,1,1.2,moonI*clamp((.6-sm.v)/.2,0,1),mc); shaft(DOOR,-1,1.2,moonI*clamp((sm.v-.4)/.2,0,1),mc);
-  glow(230,343,170,[S.hor[0],S.hor[1],S.hor[2]],clamp(wI*.2+.05,0,.25)*(S.stars>.5?0:1));
-  glow(1485,430,170,[S.hor[0],S.hor[1],S.hor[2]],clamp(dI*.2+.05,0,.25)*(S.stars>.5?0:1));
+  shaft(WIN,1,1.2,moonI*clamp((.6-sm.v)/.2,0,1)*cO,mc); shaft(DOOR,-1,1.2,moonI*clamp((sm.v-.4)/.2,0,1)*dO,mc);
+  glow(230,343,170,[S.hor[0],S.hor[1],S.hor[2]],clamp(wI*.2+.05*cO,0,.25)*(S.stars>.5?0:1));
+  glow(1485,430,170,[S.hor[0],S.hor[1],S.hor[2]],clamp(dI*.2+.05*dO,0,.25)*(S.stars>.5?0:1));
   M.restore();
   return {sunI};
 }
@@ -505,7 +551,7 @@ function drawBox(){
 /* To add a gift: save your painting as a PNG in the "gifts" folder, then add a line here.
    spot = where it hangs on the wall after it's opened: [x, y, width, height] — leave it null to use the next free slot. */
 const GIFTS=window.GIFT_LIST;
-const SLOTS=[[380,296,92,80],[492,296,92,80],[604,296,92,80],[716,296,92,80]];
+const SLOTS=[[414,296,92,80],[526,296,92,80],[638,296,92,80],[750,296,92,80]];   // starts right of the open curtain (which ends at x≈382)
 const BOX={x:648,y:486};
 let seen=new Set(); try{ if(new URLSearchParams(location.search).has('resetgifts')) localStorage.removeItem('croc_seen_gifts'); seen=new Set(JSON.parse(localStorage.getItem('croc_seen_gifts')||'[]')); }catch(e){}
 const saveSeen=()=>{ try{ localStorage.setItem('croc_seen_gifts',JSON.stringify([...seen])); }catch(e){} };
@@ -544,6 +590,9 @@ const BED_Y=508;
 const ST={
   sleep:{x:262,y:626,dir:1,mode:'sleep'},
   door :{x:1462,y:634,dir:1,mode:'idle'},
+  curtain :{x:236,y:638,dir:1,mode:'idle',act:'curt'},      // reaches up to the curtains
+  doorShut:{x:1382,y:640,dir:1,mode:'idle',act:'door'},
+  grump:{x:1382,y:640,dir:1,mode:'idle',act:'door'},        // gets up to shut a door you left open at night     // stands beside the door
   table:{x:700,y:634,dir:1,mode:'work',fid:1},
   shelf:{x:1010,y:636,dir:1,mode:'sort',fid:1},
   fire :{x:1105,y:642,dir:1,mode:'sit'},
@@ -553,27 +602,38 @@ const ST={
 };
 function scheduleFor(h){
   if(h<6.4||h>=22.5) return 'sleep';
-  if(h<7.6) return 'door';
-  if(h<11)  return 'table';
-  if(h<12)  return 'pot1';
-  if(h<13.5)return 'shelf';
-  if(h<16.5)return 'table';
-  if(h<17)  return 'pot2';
-  if(h<18.8)return 'door';
-  if(h<21.5)return 'fire';
-  return 'shelf';
+  if(h<6.55) return 'curtain';      // wakes, opens the curtains
+  if(h<6.7)  return 'doorShut';     // then opens the door
+  if(h<7.6)  return 'door';
+  if(h<11)   return 'table';
+  if(h<12)   return 'pot1';
+  if(h<13.5) return 'shelf';
+  if(h<16.5) return 'table';
+  if(h<17)   return 'pot2';
+  if(h<18.8) return 'door';
+  if(h<21.5) return 'fire';
+  if(h<22.1) return 'shelf';
+  if(h<22.25)return 'doorShut';     // before bed: shuts the door
+  return 'curtain';                 // ...then closes the curtains, then sleeps
 }
 const C={x:262,y:626,dir:1,mode:'idle',walkT:0,station:null,goal:{x:262,y:626},onBed:false,hop:null,petT:0,surprise:0,fid:3,sc:1,sx:1,sy:1,hopY:0,bw:100,bh:124};
 const hearts=[];
 const R2=(a,b)=>a+Math.random()*(b-a);
-function pet(sec=3){
+function pet(sec=3,more=false){
   if(C.onBed&&C.petT<=0) C.surprise=.9;
   C.petT=Math.max(C.petT,sec);
-  for(let i=0;i<5;i++) hearts.push({x:C.x+R2(-40,40),y:C.y-C.bh-6,vy:R2(24,44),life:1,sz:R2(6,10),ph:Math.random()*6});
+  for(let i=0;i<(more?10:5);i++) hearts.push({x:C.x+R2(-44,44),y:C.y-C.bh-6-R2(0,22),vy:R2(24,48),life:1,sz:more?R2(7,14):R2(6,10),ph:Math.random()*6});
 }
 function updateWorld(dt){
   const h=Scene.hour, gw=pendingGift()&&!overlayOpen, now=performance.now()/1000;
-  const want=overlayOpen?C.station||'table':(gw?'gift':scheduleFor(h));
+  { const sd=openTargets(h).door; if(lastSchedDoor===null) lastSchedDoor=sd; if(sd!==lastSchedDoor){ doorOverride=null; lastSchedDoor=sd; }
+    const tg=effTargets(h); if(!Scene.openInit){ Scene.curt=tg.curt; Scene.door=tg.door; Scene.openInit=true; }      // on arrival the room is already as it should be
+    for(const k of ['curt','door']) Scene[k]+=clamp(tg[k]-Scene[k],-dt/6,dt/6); }                                     // ...after that it takes ~6 s to swing
+  const grumpy=doorOverride===1&&openTargets(h).door===0;                                  // someone left the door open at night
+  const want=overlayOpen?C.station||'table':(grumpy?'grump':(now<manualUntil?'manual':(sleepNow&&isNight(h)?'sleep':(gw?'gift':scheduleFor(h)))));
+  if(!isNight(h)) sleepNow=false;
+  C.noT=Math.max(0,(C.noT||0)-dt);
+  C.grumpT=want==='grump'?7:Math.max(0,(C.grumpT||0)-dt);                                  // the little cloud lingers until he is back in bed
   for(const k of hearts){ k.y-=k.vy*dt; k.life-=dt*.55; } while(hearts.length&&hearts[0].life<=0) hearts.shift();
   C.hopY=0; C.sx=C.sy=1;
   if(C.hop){ C.hop.t+=dt/C.hop.dur; const t=Math.min(1,C.hop.t); C.x=lerp(C.hop.x0,C.hop.x1,t); C.y=lerp(C.hop.y0,C.hop.y1,t)-Math.sin(Math.PI*t)*60; C.mode='hop';
@@ -585,6 +645,9 @@ function updateWorld(dt){
   const dx=C.goal.x-C.x, dy=C.goal.y-C.y, d=Math.hypot(dx,dy);
   if(!C.onBed&&d>3){ const sp=85, k=Math.min(1,sp*dt/d); C.x+=dx*k; C.y+=dy*k; if(Math.abs(dx)>2) C.dir=dx>0?1:-1; C.mode='walk'; C.walkT+=dt*5; }
   else { const s=ST[C.station]; C.dir=s.dir; C.mode=s.mode;
+    if(C.station==='manual'&&!manualArrived){ manualArrived=true; manualUntil=now+5; }      // 5 s after he gets there, with no new orders, he carries on with his day (or goes to bed)
+    if(C.station==='grump'&&doorOverride===1) doorOverride=null;                         // he has reached it: now it swings shut
+    if(s.act&&Math.abs(effTargets(h)[s.act]-Scene[s.act])>.002) C.mode='pickup';       // reaching up while it moves
     if(C.mode==='excited') C.hopY=-Math.abs(Math.sin(now*7))*9;
     if(C.station==='sleep'&&!C.onBed){ C.hop={x0:C.x,y0:C.y,x1:C.x,y1:BED_Y,t:0,dur:1.5}; C.onBed=true; }
     else if(s.fid){ C.fid-=dt; if(C.fid<=0){ C.fid=R2(5,9); C.goal={x:clamp(s.x+R2(-55,55),60,1520),y:clamp(s.y+R2(-8,8),580,684)}; } } }
@@ -634,13 +697,34 @@ function drawCharacters(g,hour,t,S){
       g.beginPath(); g.moveTo(x-5*a,y); g.lineTo(x+5*a,y); g.moveTo(x,y-5*a); g.lineTo(x,y+5*a); g.stroke(); }
     g.restore();
   }
+  // soft rings where you tapped
+  for(const r of ripples){ const a=clamp(r.life,0,1), rr=(1-a)*30+5; g.strokeStyle=`rgba(255,240,255,${a*.6})`; g.lineWidth=1.5; g.beginPath(); g.ellipse(r.x,r.y,rr,rr*.3,0,0,6.3); g.stroke(); }
+  // the secret jar twinkles now and then
+  { const tw=Math.pow(Math.max(0,Math.sin(t*.5)),16); if(tw>.03){ g.save(); g.globalCompositeOperation='lighter'; g.strokeStyle=`rgba(255,240,190,${tw*.9})`; g.lineWidth=1.3; const sx=1247, sy=410, z=7*tw;
+    g.beginPath(); g.moveTo(sx-z,sy); g.lineTo(sx+z,sy); g.moveTo(sx,sy-z); g.lineTo(sx,sy+z); g.stroke(); g.restore(); } }
   // the crocodile
   const p=crocPick(t); if(!p) return;
   const fr=p.fr, s=CS*C.sc;
   if(!C.onBed&&!C.hop){ g.fillStyle='rgba(30,18,50,.2)'; g.beginPath(); g.ellipse(C.x,C.y+2,Math.max(40,fr.bodyW*.42)*s,7*s,0,0,6.3); g.fill(); }
-  g.save(); g.translate(C.x,C.y+C.hopY); g.scale((p.flip?-1:1)*s*C.sx,s*C.sy);
+  g.save(); g.translate(C.x,C.y+C.hopY);
+  if(C.noT>0){ g.translate(0,-C.bh*.6); g.rotate(Math.sin(t*16)*.14*Math.min(1,C.noT)); g.translate(0,C.bh*.6); }      // shaking his head
+  g.scale((p.flip?-1:1)*s*C.sx,s*C.sy);
   g.drawImage(tintedCanvas(fr.cv,fr.w,fr.h,S.room),0,0,fr.w,fr.h,-fr.ax,-fr.ay,fr.w,fr.h); g.restore();
   C.bw=fr.bodyW*s; C.bh=fr.bodyH*s;
+  if(C.noT>0){ const a=Math.min(1,C.noT*1.5), bx=C.x+C.bw*.3, by=C.y-C.bh-16;
+    g.save(); g.globalAlpha=a; g.fillStyle='rgba(255,250,244,.95)'; g.strokeStyle='rgba(70,50,90,.7)'; g.lineWidth=1.4; g.beginPath(); g.ellipse(bx,by,19,11,0,0,6.3); g.fill(); g.stroke();
+    g.fillStyle='rgba(70,50,90,.9)'; g.font='bold 13px ui-monospace,Menlo,monospace'; g.textAlign='center'; g.textBaseline='middle'; g.fillText('no',bx,by+1); g.restore(); }
+  if((C.grumpT||0)>0){                                                             // a little grumpy cloud
+    const a=Math.min(1,C.grumpT), cx=C.x, cy=C.y-C.bh-28+Math.sin(t*2)*2;
+    g.save(); g.globalAlpha=a; g.fillStyle='rgba(88,84,108,.96)';
+    for(const [dx,dy,r] of [[-14,2,9],[-4,-5,11],[8,-3,10],[17,3,8],[1,4,10]]){ g.beginPath(); g.arc(cx+dx,cy+dy,r,0,6.3); g.fill(); }
+    g.fillStyle='rgba(58,54,78,.55)'; g.beginPath(); g.ellipse(cx,cy+9,22,4,0,0,6.3); g.fill();
+    g.strokeStyle='rgba(170,200,255,.85)'; g.lineWidth=1.3; g.lineCap='round';
+    for(let i=0;i<3;i++){ const ph=(t*1.6+i*.33)%1; g.beginPath(); g.moveTo(cx-10+i*10,cy+13+ph*20); g.lineTo(cx-11+i*10,cy+18+ph*20); g.stroke(); }
+    if(Math.sin(t*5)>.55){ g.strokeStyle='rgba(255,226,110,.95)'; g.lineWidth=1.8; g.beginPath(); g.moveTo(cx+5,cy+10); g.lineTo(cx+1,cy+17); g.lineTo(cx+6,cy+17); g.lineTo(cx+2,cy+25); g.stroke(); }
+    g.restore(); }
+  if(T.state==='fly'){ g.save(); g.translate(T.x,T.y); g.rotate(T.t*9); g.fillStyle='hsl(32,62,64)'; g.strokeStyle='hsl(24,50,32)'; g.lineWidth=1.3; g.beginPath(); g.arc(0,0,6.5,0,6.3); g.fill(); g.stroke();
+    g.fillStyle='hsl(20,48,30)'; for(const [dx,dy] of [[-2.5,-1.5],[2,-2.5],[0,2.5]]){ g.beginPath(); g.arc(dx,dy,1,0,6.3); g.fill(); } g.restore(); }
   for(const k of hearts) heart(g,k.x+Math.sin(t*3+k.ph)*6,k.y,k.sz,clamp(k.life,0,1));
 }
 
@@ -648,8 +732,71 @@ function drawCharacters(g,hour,t,S){
 function toLogical(e){ const r=main.getBoundingClientRect(), s=Math.max(r.width/W,r.height/H), ox=r.left+(r.width-W*s)/2, oy=r.top+(r.height-H*s)/2; return [(e.clientX-ox)/s,(e.clientY-oy)/s]; }
 const hitBox=([x,y])=>pendingGift()&&!overlayOpen&&Math.abs(x-BOX.x)<36&&y>BOX.y-80&&y<BOX.y+6;
 const hitCroc=([x,y])=>Math.pow((x-C.x)/(C.bw*.6),2)+Math.pow((y-(C.y-C.bh*.5))/(C.bh*.6),2)<=1;
-main.addEventListener('click',e=>{ if(overlayOpen) return; const p=toLogical(e); if(hitBox(p)){ openGift(pendingGift()); return; } if(hitCroc(p)) pet(3); });
-main.addEventListener('pointermove',e=>{ const p=toLogical(e); main.style.cursor=(hitBox(p)||hitCroc(p))?'pointer':'default'; });
+/* ---------- love: every pet fills the bar; it never ends, it just starts another level ---------- */
+let love={lv:1,pts:0}; try{ const s=JSON.parse(localStorage.getItem('croc_love')||'null'); if(s&&s.lv) love=s; }catch(e){}
+const LV_PTS=30, loveFill=document.querySelector('#loveBar i'), loveLv=document.getElementById('loveLv'), loveEl=document.getElementById('love');
+function loveRender(){ loveFill.style.transform='scaleX('+Math.min(1,love.pts/LV_PTS)+')'; loveLv.textContent='love · '+love.lv; }
+function loveAdd(n){
+  love.pts+=n;
+  while(love.pts>=LV_PTS){ love.pts-=LV_PTS; love.lv++; loveEl.classList.remove('pulse'); void loveEl.offsetWidth; loveEl.classList.add('pulse'); pet(5,true); }
+  try{ localStorage.setItem('croc_love',JSON.stringify(love)); }catch(e){}
+  loveRender();
+}
+loveRender();
+
+/* ---------- tap to send him somewhere ---------- */
+let manualUntil=0; const ripples=[];
+function walkTo(x,y){
+  x=clamp(x,60,1520); y=clamp(y,WALK_MIN_Y,WALK_MAX_Y);
+  ST.manual={x,y,dir:(x<C.x?-1:1),mode:'idle'}; manualUntil=performance.now()/1000+60; manualArrived=false; sleepNow=false;      // the 5 s countdown starts when he arrives
+  if(C.station==='manual') C.goal={x,y};
+  ripples.push({x,y,life:1});
+}
+
+/* ---------- the secret jar ---------- */
+const JAR={x:1236,y:436}, hitJar=([x,y])=>x>1216&&x<1256&&y>392&&y<440;
+const hitBed=([x,y])=>x>36&&x<398&&y>428&&y<598;
+function tapBed(){
+  if(isNight(Scene.hour)){ if(C.onBed||C.station==='sleep') return; sleepNow=true; manualUntil=0; T.state=''; }      // night: off to bed
+  else C.noT=1.5;                                                                                                    // daytime: shakes his head, "no"
+}
+const hitDoor=([x,y])=>x>DOOR[0]-14&&x<DOOR[2]+14&&y>DOOR[1]-14&&y<DOOR[3]+8;
+function toggleDoor(){ const h=Scene.hour, want=effTargets(h).door?0:1; doorOverride=(want===openTargets(h).door)?null:want; }
+const T={state:'',t:0,x:0,y:0};
+function giveTreat(){
+  if(T.state) return;
+  T.state='walk'; walkTo(JAR.x+(C.x<JAR.x?-8:8),646);
+}
+function updateTreat(dt){
+  for(const r of ripples) r.life-=dt*.9; while(ripples.length&&ripples[0].life<=0) ripples.shift();
+  if(T.state==='walk'){
+    if(C.station!=='manual'||performance.now()/1000>manualUntil){ T.state=''; return; }
+    if(!C.hop&&!C.onBed&&Math.hypot(C.goal.x-C.x,C.goal.y-C.y)<4){ T.state='fly'; T.t=0; C.dir=1; }
+  } else if(T.state==='fly'){
+    T.t+=dt/.95; const k=Math.min(1,T.t), tx=C.x+C.dir*16, ty=C.y-C.bh*.72;
+    T.x=lerp(JAR.x,tx,k); T.y=lerp(JAR.y-26,ty,k)-Math.sin(Math.PI*k)*46;
+    if(k>=1){ T.state=''; pet(5,true); loveAdd(10); for(let i=0;i<8;i++) hearts.push({x:C.x+R2(-30,30),y:C.y-C.bh*.6,vy:R2(30,60),life:1,sz:R2(6,12),ph:Math.random()*6}); }
+  }
+}
+
+/* ---------- touch / mouse ---------- */
+let downAt=null, lastStroke=0;
+main.addEventListener('pointerdown',e=>{ downAt=[e.clientX,e.clientY]; });
+main.addEventListener('click',e=>{
+  if(overlayOpen) return;
+  if(downAt&&Math.hypot(e.clientX-downAt[0],e.clientY-downAt[1])>14) return;       // that was a stroke, not a tap
+  const p=toLogical(e);
+  if(hitBox(p)){ openGift(pendingGift()); return; }
+  if(hitJar(p)){ giveTreat(); return; }
+  if(hitCroc(p)){ pet(3.2,true); loveAdd(3); return; }
+  if(hitBed(p)){ tapBed(); return; }
+  if(hitDoor(p)){ toggleDoor(); return; }
+  T.state=''; walkTo(p[0],p[1]);
+});
+main.addEventListener('pointermove',e=>{
+  const p=toLogical(e); main.style.cursor=(hitBox(p)||hitCroc(p)||hitJar(p)||hitDoor(p)||hitBed(p))?'pointer':'default';
+  if(e.buttons&&!overlayOpen&&hitCroc(p)&&performance.now()-lastStroke>380){ lastStroke=performance.now(); pet(2.2,true); loveAdd(1); }   // stroke him
+});
 if(pendingGift()) setTimeout(()=>showNotice('A gift has arrived 🎁  look on the table'),2500);
 
 /* ---------- the analogue clock above the fireplace (face is painted; hands move with real time) ---------- */
@@ -669,6 +816,7 @@ const Scene={ W,H,floorTop:FLOOR_TOP,walkMinY:WALK_MIN_Y,walkMaxY:WALK_MAX_Y,gro
   setHour(h){ Scene.hour=h; },
   doorX:(DOOR[0]+DOOR[2])/2, windowX:(WIN[0]+WIN[2])/2 };
 window.Scene=Scene;
+Scene.curt=1; Scene.door=1; Scene.openInit=false;      // 1 = open, 0 = closed
 
 function render(ts){
   if (avail<1) return;
@@ -679,6 +827,7 @@ function render(ts){
   drawSkyBodies(S,t,sm,vM);
   tint(OUTW[vO],S.out); tint(OUTD[vO],S.out);
   tint(BACK[vB],S.room,off[0],off[1]);
+  drawCurtains(S,vB); drawDoor(S,vB);
   const {sunI}=drawLightsBehind(S,t,sm);
   drawGiftFrames(S);                                                  // paintings you've been given, hanging on the wall
   tint(MID[vM],S.room,-off[0],off[1]);
@@ -702,7 +851,7 @@ function frame(ts){
   const dt=Math.min(.1,(ts-last)/1000); last=ts;
   if (Scene.live){ const d=new Date(); Scene.hour=d.getHours()+d.getMinutes()/60+d.getSeconds()/3600+d.getMilliseconds()/3.6e6; }   // the day follows the real day
   else if (Scene.playing){ Scene.hour=(Scene.hour+dt*24/Scene.dayLength)%24; slider.value=Scene.hour; }
-  updateWorld(dt); hud(); render(ts);
+  updateWorld(dt); updateTreat(dt); hud(); render(ts);
   requestAnimationFrame(frame);
 }
 if(location.hash==='#debug'){ document.body.classList.add('debug'); Scene.live=false; Scene.playing=true; playBtn.textContent='❚❚'; }   // open game.html#debug to scrub time
