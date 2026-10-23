@@ -18,9 +18,15 @@
   #hm.open nav{opacity:1;visibility:visible;transform:none;transition:opacity .7s ease,transform .7s ease,background 1s ease}
   #hm nav a{padding:8px 12px;color:var(--c);text-decoration:none;font-size:13px;letter-spacing:.08em;text-align:right;transition:color 1s ease,opacity .6s ease;opacity:.85}
   #hm nav a:hover,#hm nav a.here{opacity:1;text-decoration:underline;text-underline-offset:4px}`;
+  css.textContent+=`
+  #rot{display:none;position:fixed;inset:0;z-index:100000;flex-direction:column;align-items:center;justify-content:center;gap:28px;background:radial-gradient(ellipse at 50% 45%,#e8f5e8,#c6e2cb);color:#2c4733;font-family:${MONO};font-size:13px;letter-spacing:.26em;text-align:center;padding:0 30px}
+  #rot i{display:block;width:46px;height:76px;border:2px solid #2c4733;border-radius:9px;animation:turn 4s ease-in-out infinite}
+  @keyframes turn{0%,20%{transform:rotate(0)}60%,100%{transform:rotate(-90deg)}}
+  @media (orientation:portrait) and (pointer:coarse){#rot{display:flex}}`;
   document.head.appendChild(css);
 
   function build(){
+    const rot=document.createElement('div'); rot.id='rot'; rot.innerHTML='<i></i><div>please turn your phone sideways</div>'; document.body.appendChild(rot);
     const here=location.pathname.split('/').pop()||'index.html';
     const box=document.createElement('div'); box.id='hm';
     box.innerHTML='<button aria-label="menu" aria-expanded="false"><i></i><i></i><i></i></button><nav>'+
@@ -53,6 +59,10 @@
     tick(); setInterval(tick,900);
   }
   if(document.body) build(); else document.addEventListener('DOMContentLoaded',build);
+
+  /* ask the browser to hold landscape (only some phones allow it, and only in fullscreen); the overlay above does the rest */
+  const lock=()=>{ try{ screen.orientation&&screen.orientation.lock&&screen.orientation.lock('landscape').catch(()=>{}); }catch(e){} };
+  lock(); document.addEventListener('click',lock,{once:true});
 
   /* slow fade out before moving to another page */
   document.addEventListener('click',e=>{
