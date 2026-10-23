@@ -1,0 +1,9 @@
+{
+  "name": "Lavender Workshop",
+  "short_name": "Lavender",
+  "start_url": "index.html",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#c6e2cb",
+  "theme_color": "#c6e2cb"
+}

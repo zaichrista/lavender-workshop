@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<link rel="manifest" href="manifest.webmanifest">
 <title>Lavender Workshop</title>
 <style>
   :root { --ink:#f3ecfa; }
@@ -27,6 +28,25 @@
   #giftCard img { max-width:100%; max-height:48vh; border:9px solid #7a5638; box-shadow:0 2px 10px rgba(0,0,0,.3); background:#fff; }
   #giftTitle { font-size:17px; margin-top:6px; }
   #giftNote { font-size:13px; opacity:.75; font-style:italic; }
+  #note { position:absolute; inset:0; z-index:4; display:flex; align-items:center; justify-content:center; background:rgba(14,8,24,.62); backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px); opacity:0; visibility:hidden; transition:opacity 1s ease, visibility 0s 1s; }
+  #note.show { opacity:1; visibility:visible; transition:opacity 1s ease; }
+  #noteCard { background:#fbf3e6; color:#4a3350; padding:22px 26px 18px; border-radius:4px; width:min(78vw,440px); box-shadow:0 20px 60px rgba(0,0,0,.55); transform:rotate(-.8deg); display:flex; flex-direction:column; gap:12px; border:1px solid #d9c3b2; }
+  #noteHead { font-family:ui-monospace,Menlo,Consolas,"Courier New",monospace; font-size:10px; letter-spacing:.26em; text-transform:uppercase; opacity:.6; }
+  #noteTo { font-style:italic; font-size:17px; }
+  #noteBody { font-style:italic; font-size:16px; line-height:1.5; }
+  #noteSign { align-self:flex-end; font-style:italic; font-size:16px; }
+  #noteClose { align-self:center; margin-top:4px; background:#c9577f; color:#fff; border:0; border-radius:999px; padding:7px 20px; font-family:ui-monospace,Menlo,Consolas,"Courier New",monospace; font-size:12px; letter-spacing:.1em; cursor:pointer; }
+  #letters { position:absolute; inset:0; z-index:4; display:flex; align-items:center; justify-content:center; background:rgba(14,8,24,.62); backdrop-filter:blur(4px); -webkit-backdrop-filter:blur(4px); opacity:0; visibility:hidden; transition:opacity 1s ease, visibility 0s 1s; }
+  #letters.show { opacity:1; visibility:visible; transition:opacity 1s ease; }
+  #lettersCard { background:#fbf3e6; color:#4a3350; padding:20px 24px 16px; border-radius:4px; width:min(80vw,460px); max-height:82vh; box-shadow:0 20px 60px rgba(0,0,0,.55); display:flex; flex-direction:column; gap:12px; border:1px solid #d9c3b2; }
+  #lettersHead { font-family:ui-monospace,Menlo,Consolas,"Courier New",monospace; font-size:11px; letter-spacing:.28em; text-transform:uppercase; opacity:.65; text-align:center; }
+  #lettersList { overflow-y:auto; display:flex; flex-direction:column; gap:14px; padding-right:4px; }
+  #lettersList .ln { border-top:1px dashed #d6bfae; padding-top:10px; }
+  #lettersList .ln:first-child { border-top:0; padding-top:0; }
+  #lettersList .lv { font-family:ui-monospace,Menlo,Consolas,"Courier New",monospace; font-size:10px; letter-spacing:.22em; text-transform:uppercase; opacity:.55; margin-bottom:4px; }
+  #lettersList .tx { font-style:italic; font-size:15px; line-height:1.5; }
+  #lettersList .empty { font-style:italic; opacity:.65; text-align:center; padding:8px 0; }
+  #lettersClose { align-self:center; background:#c9577f; color:#fff; border:0; border-radius:999px; padding:7px 20px; font-family:ui-monospace,Menlo,Consolas,"Courier New",monospace; font-size:12px; letter-spacing:.1em; cursor:pointer; }
   #giftClose { margin-top:6px; background:#7b5ea7; color:#fff; border:0; border-radius:999px; padding:7px 20px; font:inherit; font-size:13px; letter-spacing:.06em; cursor:pointer; }
   #love { position:absolute; z-index:3; top:max(12px,env(safe-area-inset-top)); left:50%; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center; gap:6px; pointer-events:none; font-family:ui-monospace,Menlo,Consolas,"Courier New",monospace; font-size:11px; letter-spacing:.24em; color:#fff4f8; text-shadow:0 1px 6px rgba(40,10,40,.7); }
   #love.pulse #loveLv { animation:lvpulse 1.6s ease; }
@@ -39,10 +59,13 @@
   #bar i { display:block; height:100%; background:#2c4733; transform:scaleX(0); transform-origin:left; transition:transform 1s ease; }
 </style>
 <script src="assets/menu.js"></script>
+<script src="assets/notes.js"></script>
 </head>
 <body>
 <div id="stage">
   <canvas id="main"></canvas>
+  <div id="note"><div id="noteCard"><div id="noteHead"></div><div id="noteTo">Tim,</div><div id="noteBody"></div><div id="noteSign">Zai ♡</div><button id="noteClose">keep it</button></div></div>
+  <div id="letters"><div id="lettersCard"><div id="lettersHead">letter box</div><div id="lettersList"></div><button id="lettersClose">close</button></div></div>
   <div id="love"><span id="loveLv">love · 1</span><div id="loveBar"><i></i></div></div>
   <div id="hud"><div id="clock">07:00</div><div id="phase">Morning</div></div>
   <div id="loading"><div>painting the scenery</div><div id="bar"><i></i></div></div>
@@ -298,6 +321,13 @@ function paintMid(v){
       box(x,sy-h,x+w,sy,c,{ang:vert,dens:3,len:[4,7],wid:[1.2,2],ea:.35}); x+=w+1;
     }
   });
+  /* the letter box: where every love note is kept */
+  box(1022,332,1090,382,[26,34,20],{edge:false});                                              // clears a gap on the shelf
+  box(1028,352,1086,380,[38,52,88],{ea:.55,ew:1.8});                                           // cream body
+  box(1026,340,1088,354,[345,52,68],{ea:.55,ew:1.8});                                          // rose lid
+  box(1026,353,1088,357,[44,70,56],{ea:.5});                                                   // gold band
+  box(1051,345,1063,362,[44,80,62],{ea:.5});                                                   // brass clasp
+  facePoly(ellPts(1057,370,6,5.4,12),[350,70,58],{dens:3.4,ea:.4,len:[3,5],wid:[1,1.6]});        // heart on the front
   for(const y of [590,520,450,380,316]) box(940,y,1100,y+10,[28,42,40],{});
   box(940,316,952,GY,wood,{ang:vert}); box(1088,316,1100,GY,wood,{ang:vert}); box(932,304,1108,318,[26,42,26],{});
   /* ---- FIREPLACE ---- */
@@ -509,8 +539,8 @@ function drawLightsFront(S,t,sm,sunI){
   const dark=1-clamp(sm.elev*1.8,0,1), fireI=(.16+.4*dark)*(.88+.12*fr());
   glow(fx,fy1-fh*.3,300,[255,140,50],fireI*.38); glow(fx,fy1-fh*.3,110,[255,190,90],fireI*.3);
   const lampI=S.lamp*(.9+.1*Math.sin(t*7.3));
-  if (lampI>.02){ glow(LAMP[0],LAMP[1]-8,190,[255,190,100],lampI*.3); glow(LAMP[0],LAMP[1]-8,40,[255,220,150],lampI*.32);
-    M.fillStyle=`rgba(255,226,150,${.85*lampI})`; M.beginPath(); M.ellipse(LAMP[0],LAMP[1]-8,2,4+Math.sin(t*8)*.5,0,0,6.3); M.fill(); }
+  if (lampI>.02){ glow(LAMP[0],LAMP[1]-8,130,[255,190,100],lampI*.14); glow(LAMP[0],LAMP[1]-8,30,[255,220,150],lampI*.16);
+    M.fillStyle=`rgba(255,226,150,${.6*lampI})`; M.beginPath(); M.ellipse(LAMP[0],LAMP[1]-8,2,4+Math.sin(t*8)*.5,0,0,6.3); M.fill(); }
   if (sunI>.1) for(const m of MOTES){ const x=(m.x+Math.sin(t*m.sp+m.ph)*14+t*m.sp*6)%W, y=m.y+Math.cos(t*m.sp*.8+m.ph)*10;
     M.fillStyle=`rgba(255,240,200,${sunI*.3})`; M.beginPath(); M.arc(x,y,1,0,6.3); M.fill(); }
   M.restore();
@@ -592,6 +622,7 @@ const ST={
   door :{x:1462,y:634,dir:1,mode:'idle'},
   curtain :{x:236,y:638,dir:1,mode:'idle',act:'curt'},      // reaches up to the curtains
   doorShut:{x:1382,y:640,dir:1,mode:'idle',act:'door'},
+  letter:{x:1020,y:640,dir:1,mode:'pickup'},                 // reaches up to the envelope on the bookshelf
   grump:{x:1382,y:640,dir:1,mode:'idle',act:'door'},        // gets up to shut a door you left open at night     // stands beside the door
   table:{x:700,y:634,dir:1,mode:'work',fid:1},
   shelf:{x:1010,y:636,dir:1,mode:'sort',fid:1},
@@ -628,9 +659,9 @@ function updateWorld(dt){
   const h=Scene.hour, gw=pendingGift()&&!overlayOpen, now=performance.now()/1000;
   { const sd=openTargets(h).door; if(lastSchedDoor===null) lastSchedDoor=sd; if(sd!==lastSchedDoor){ doorOverride=null; lastSchedDoor=sd; }
     const tg=effTargets(h); if(!Scene.openInit){ Scene.curt=tg.curt; Scene.door=tg.door; Scene.openInit=true; }      // on arrival the room is already as it should be
-    for(const k of ['curt','door']) Scene[k]+=clamp(tg[k]-Scene[k],-dt/6,dt/6); }                                     // ...after that it takes ~6 s to swing
+    for(const k of ['curt','door']){ const sp=(k==='door'&&doorOverride!==null)?dt/1.2:dt/6; Scene[k]+=clamp(tg[k]-Scene[k],-sp,sp); } }       // tapped doors swing in ~1 s, scheduled ones take ~6 s
   const grumpy=doorOverride===1&&openTargets(h).door===0;                                  // someone left the door open at night
-  const want=overlayOpen?C.station||'table':(grumpy?'grump':(now<manualUntil?'manual':(sleepNow&&isNight(h)?'sleep':(gw?'gift':scheduleFor(h)))));
+  const want=overlayOpen?C.station||'table':(noteSave.queue.length?'letter':grumpy?'grump':(now<manualUntil?'manual':(sleepNow&&isNight(h)?'sleep':(gw?'gift':scheduleFor(h)))));
   if(!isNight(h)) sleepNow=false;
   C.noT=Math.max(0,(C.noT||0)-dt);
   C.grumpT=want==='grump'?7:Math.max(0,(C.grumpT||0)-dt);                                  // the little cloud lingers until he is back in bed
@@ -697,10 +728,27 @@ function drawCharacters(g,hour,t,S){
       g.beginPath(); g.moveTo(x-5*a,y); g.lineTo(x+5*a,y); g.moveTo(x,y-5*a); g.lineTo(x,y+5*a); g.stroke(); }
     g.restore();
   }
+  // the love-note envelope on the bookshelf
+  if(noteSave.queue.length){
+    const age=clamp((performance.now()/1000-ENV.t0)/1.1,0,1), pop=age<1?1+Math.sin(age*Math.PI)*.35*(1-age)+(age-1)*0:1, sc=ease(age)*pop, op=clamp(NOTE.t/2.2,0,1);
+    g.save(); g.translate(ENV.x,ENV.y+Math.sin(t*2)*1.5); g.rotate(-.1); g.scale(sc,sc);
+    g.save(); g.globalCompositeOperation='lighter'; const gr=g.createRadialGradient(0,0,2,0,0,40); gr.addColorStop(0,'rgba(255,214,228,.38)'); gr.addColorStop(1,'rgba(255,214,228,0)'); g.fillStyle=gr; g.fillRect(-42,-42,84,84); g.restore();
+    g.fillStyle='#fffdf6'; g.strokeStyle='#b88a98'; g.lineWidth=1; g.fillRect(-13,-9-op*15,26,18); g.strokeRect(-13,-9-op*15,26,18);        // the letter slides out
+    g.fillStyle='#f6ead8'; g.strokeStyle='#8a5a6a'; g.lineWidth=1.4; g.fillRect(-18,-10,36,22); g.strokeRect(-18,-10,36,22);
+    g.beginPath(); g.moveTo(-18,12); g.lineTo(0,0); g.lineTo(18,12); g.stroke();
+    g.fillStyle='#ecb8c6'; g.beginPath(); g.moveTo(-18,-10); g.lineTo(18,-10); g.lineTo(0,lerp(3,-24,ease(op))); g.closePath(); g.fill(); g.stroke();
+    if(op<.4) heart(g,0,2.5,4.6,1-op*2.5);
+    g.restore();
+    g.save(); g.globalCompositeOperation='lighter'; g.strokeStyle='rgba(255,236,190,.85)'; g.lineWidth=1.2;
+    for(let i=0;i<3;i++){ const a=.5+.5*Math.sin(t*2.4+i*2.1), x=ENV.x+Math.cos(i*2.1+t*.5)*30, y=ENV.y+Math.sin(i*2.1+t*.5)*18, z=4*a; g.beginPath(); g.moveTo(x-z,y); g.lineTo(x+z,y); g.moveTo(x,y-z); g.lineTo(x,y+z); g.stroke(); }
+    g.restore();
+  }
   // soft rings where you tapped
   for(const r of ripples){ const a=clamp(r.life,0,1), rr=(1-a)*30+5; g.strokeStyle=`rgba(255,240,255,${a*.6})`; g.lineWidth=1.5; g.beginPath(); g.ellipse(r.x,r.y,rr,rr*.3,0,0,6.3); g.stroke(); }
-  // the secret jar twinkles now and then
-  { const tw=Math.pow(Math.max(0,Math.sin(t*.5)),16); if(tw>.03){ g.save(); g.globalCompositeOperation='lighter'; g.strokeStyle=`rgba(255,240,190,${tw*.9})`; g.lineWidth=1.3; const sx=1247, sy=410, z=7*tw;
+  // a soft rosy glow around the letter box
+  { g.save(); g.globalCompositeOperation='lighter'; const gr=g.createRadialGradient(1057,358,4,1057,358,58), a=.26+.1*Math.sin(t*1.6); gr.addColorStop(0,`rgba(255,196,214,${a})`); gr.addColorStop(1,'rgba(255,196,214,0)'); g.fillStyle=gr; g.fillRect(990,298,134,120); g.restore(); }
+  // the secret jar and the letter box each twinkle now and then (out of step with each other)
+  for(const [sx,sy,ph] of [[1247,410,0],[1082,342,2.4]]){ const tw=Math.pow(Math.max(0,Math.sin(t*.5+ph)),16); if(tw>.03){ g.save(); g.globalCompositeOperation='lighter'; g.strokeStyle=`rgba(255,240,190,${tw*.9})`; g.lineWidth=1.3; const z=7*tw;
     g.beginPath(); g.moveTo(sx-z,sy); g.lineTo(sx+z,sy); g.moveTo(sx,sy-z); g.lineTo(sx,sy+z); g.stroke(); g.restore(); } }
   // the crocodile
   const p=crocPick(t); if(!p) return;
@@ -734,19 +782,59 @@ const hitBox=([x,y])=>pendingGift()&&!overlayOpen&&Math.abs(x-BOX.x)<36&&y>BOX.y
 const hitCroc=([x,y])=>Math.pow((x-C.x)/(C.bw*.6),2)+Math.pow((y-(C.y-C.bh*.5))/(C.bh*.6),2)<=1;
 /* ---------- love: every pet fills the bar; it never ends, it just starts another level ---------- */
 let love={lv:1,pts:0}; try{ const s=JSON.parse(localStorage.getItem('croc_love')||'null'); if(s&&s.lv) love=s; }catch(e){}
-const LV_PTS=30, loveFill=document.querySelector('#loveBar i'), loveLv=document.getElementById('loveLv'), loveEl=document.getElementById('love');
-function loveRender(){ loveFill.style.transform='scaleX('+Math.min(1,love.pts/LV_PTS)+')'; loveLv.textContent='love · '+love.lv; }
+const need=lv=>Math.round(30*Math.pow(1.3,lv-1)), loveFill=document.querySelector('#loveBar i'), loveLv=document.getElementById('loveLv'), loveEl=document.getElementById('love');
+function loveRender(){ loveFill.style.transform='scaleX('+Math.min(1,love.pts/need(love.lv))+')'; loveLv.textContent='love · '+love.lv; }
 function loveAdd(n){
   love.pts+=n;
-  while(love.pts>=LV_PTS){ love.pts-=LV_PTS; love.lv++; loveEl.classList.remove('pulse'); void loveEl.offsetWidth; loveEl.classList.add('pulse'); pet(5,true); }
+  while(love.pts>=need(love.lv)){ love.pts-=need(love.lv); love.lv++; loveEl.classList.remove('pulse'); void loveEl.offsetWidth; loveEl.classList.add('pulse'); pet(5,true); queueNote(love.lv); }
   try{ localStorage.setItem('croc_love',JSON.stringify(love)); }catch(e){}
   loveRender();
 }
 loveRender();
 
+/* ---------- love notes: a letter appears on the bookshelf at each new level, and croc drops everything to go and open it ---------- */
+let noteSave={queue:[],read:[]}; try{ const s=JSON.parse(localStorage.getItem('croc_notes')||'null'); if(s&&s.queue&&s.read) noteSave=s; }catch(e){}
+const saveNotes=()=>{ try{ localStorage.setItem('croc_notes',JSON.stringify(noteSave)); }catch(e){} };
+const ENV={x:1020,y:452,t0:0}, NOTE={t:0};
+function queueNote(lv){
+  if(!window.LOVE_NOTES||!LOVE_NOTES[lv]||noteSave.read.includes(lv)||noteSave.queue.includes(lv)) return;
+  noteSave.queue.push(lv); saveNotes(); ENV.t0=performance.now()/1000; showNotice('a love note has arrived ✉  on the bookshelf');
+}
+for(let lv=2;lv<=love.lv;lv++) queueNote(lv);
+const noteEl=document.getElementById('note');
+function openNote(){
+  const lv=noteSave.queue[0]; if(!lv) return;
+  overlayOpen=true; openedAt=Date.now(); NOTE.t=3;
+  document.getElementById('noteHead').textContent='love note · level '+lv; document.getElementById('noteBody').textContent=LOVE_NOTES[lv]; noteEl.classList.add('show');
+}
+document.getElementById('noteClose').onclick=()=>{
+  if(Date.now()-openedAt<500) return;
+  noteEl.classList.remove('show'); overlayOpen=false; const lv=noteSave.queue.shift(); if(lv) noteSave.read.push(lv); saveNotes(); NOTE.t=0; pet(5,true);
+};
+function updateNote(dt){
+  if(!noteSave.queue.length||overlayOpen) return;
+  const here=C.station==='letter'&&!C.hop&&!C.onBed&&Math.hypot(C.goal.x-C.x,C.goal.y-C.y)<4;
+  if(here){ NOTE.t+=dt; if(NOTE.t>2.8) openNote(); } else NOTE.t=0;
+}
+
+/* ---------- the letter box on the bookshelf: every note he has opened, level by level ---------- */
+const hitLetters=([x,y])=>x>1022&&x<1092&&y>332&&y<386;
+const lettersEl=document.getElementById('letters'), lettersList=document.getElementById('lettersList');
+function openLetters(){
+  const got=Object.keys(LOVE_NOTES).map(Number).filter(lv=>noteSave.read.includes(lv)).sort((a,b)=>a-b);
+  lettersList.innerHTML=got.length?'':'<div class="empty">no letters yet. keep loving croc ♡</div>';
+  for(const lv of got){ const d=document.createElement('div'); d.className='ln'; d.innerHTML='<div class="lv">level '+lv+'</div><div class="tx"></div>'; d.querySelector('.tx').textContent=LOVE_NOTES[lv]; lettersList.appendChild(d); }
+  document.getElementById('lettersHead').textContent='letter box · '+got.length+' of '+Object.keys(LOVE_NOTES).length;
+  overlayOpen=true; openedAt=Date.now(); lettersEl.classList.add('show');
+}
+function closeLetters(){ if(Date.now()-openedAt<400) return; lettersEl.classList.remove('show'); overlayOpen=false; }
+document.getElementById('lettersClose').onclick=closeLetters;
+lettersEl.addEventListener('click',e=>{ if(e.target===lettersEl) closeLetters(); });
+
 /* ---------- tap to send him somewhere ---------- */
 let manualUntil=0; const ripples=[];
 function walkTo(x,y){
+  if(noteSave.queue.length) return;                                    // a letter is waiting: nothing else matters to him right now
   x=clamp(x,60,1520); y=clamp(y,WALK_MIN_Y,WALK_MAX_Y);
   ST.manual={x,y,dir:(x<C.x?-1:1),mode:'idle'}; manualUntil=performance.now()/1000+60; manualArrived=false; sleepNow=false;      // the 5 s countdown starts when he arrives
   if(C.station==='manual') C.goal={x,y};
@@ -788,13 +876,14 @@ main.addEventListener('click',e=>{
   const p=toLogical(e);
   if(hitBox(p)){ openGift(pendingGift()); return; }
   if(hitJar(p)){ giveTreat(); return; }
+  if(hitLetters(p)){ openLetters(); return; }
   if(hitCroc(p)){ pet(3.2,true); loveAdd(3); return; }
   if(hitBed(p)){ tapBed(); return; }
   if(hitDoor(p)){ toggleDoor(); return; }
   T.state=''; walkTo(p[0],p[1]);
 });
 main.addEventListener('pointermove',e=>{
-  const p=toLogical(e); main.style.cursor=(hitBox(p)||hitCroc(p)||hitJar(p)||hitDoor(p)||hitBed(p))?'pointer':'default';
+  const p=toLogical(e); main.style.cursor=(hitBox(p)||hitCroc(p)||hitJar(p)||hitDoor(p)||hitBed(p)||hitLetters(p))?'pointer':'default';
   if(e.buttons&&!overlayOpen&&hitCroc(p)&&performance.now()-lastStroke>380){ lastStroke=performance.now(); pet(2.2,true); loveAdd(1); }   // stroke him
 });
 if(pendingGift()) setTimeout(()=>showNotice('A gift has arrived 🎁  look on the table'),2500);
@@ -851,7 +940,7 @@ function frame(ts){
   const dt=Math.min(.1,(ts-last)/1000); last=ts;
   if (Scene.live){ const d=new Date(); Scene.hour=d.getHours()+d.getMinutes()/60+d.getSeconds()/3600+d.getMilliseconds()/3.6e6; }   // the day follows the real day
   else if (Scene.playing){ Scene.hour=(Scene.hour+dt*24/Scene.dayLength)%24; slider.value=Scene.hour; }
-  updateWorld(dt); updateTreat(dt); hud(); render(ts);
+  updateWorld(dt); updateTreat(dt); updateNote(dt); hud(); render(ts);
   requestAnimationFrame(frame);
 }
 if(location.hash==='#debug'){ document.body.classList.add('debug'); Scene.live=false; Scene.playing=true; playBtn.textContent='❚❚'; }   // open game.html#debug to scrub time
